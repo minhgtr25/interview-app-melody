@@ -42,10 +42,11 @@ export function ImportDialog({ onDone }: { onDone: () => void }) {
   }
 
   const result = sheet ? applyMapping(sheet, mapping) : null;
-  const hasRequired = mapping.includes("code") && mapping.includes("full_name");
+  const hasRequired = mapping.includes("code") && mapping.includes("full_name") && mapping.includes("department");
+  const canImport = hasRequired && !!result?.valid.length && result.errors.length === 0 && result.duplicates.length === 0;
 
   async function submit() {
-    if (!result || !hasRequired) return;
+    if (!result || !canImport) return;
     setBusy(true);
     const res = await importCandidates(
       result.valid.map((v) => ({
@@ -71,8 +72,8 @@ export function ImportDialog({ onDone }: { onDone: () => void }) {
           <DialogHeader>
             <DialogTitle>Import danh sách thí sinh</DialogTitle>
             <DialogDescription>
-              Hỗ trợ .xlsx, .xls, .csv. Hệ thống tự nhận diện cột, bạn có thể chỉnh lại. Thí sinh trùng mã sẽ được
-              cập nhật thông tin, trạng thái hiện tại được giữ nguyên.
+              Hỗ trợ .xlsx, .xls, .csv. Hệ thống tự nhận diện cột, bạn có thể chỉnh lại. Mã ứng viên phải ổn định và
+              duy nhất; khi import lại, hồ sơ trùng mã được cập nhật và giữ nguyên trạng thái hiện tại.
             </DialogDescription>
           </DialogHeader>
 
@@ -143,7 +144,7 @@ export function ImportDialog({ onDone }: { onDone: () => void }) {
 
               {!hasRequired && (
                 <p className="flex items-center gap-2 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-200">
-                  <AlertTriangle className="size-4" /> Bắt buộc map cột “Mã ứng viên” và “Họ tên”.
+                  <AlertTriangle className="size-4" /> Bắt buộc map cột “Mã ứng viên”, “Họ tên” và “Ban ứng tuyển”. Cột STT không được tự nhận làm mã ứng viên.
                 </p>
               )}
               {result && hasRequired && (
@@ -154,7 +155,7 @@ export function ImportDialog({ onDone }: { onDone: () => void }) {
                   </p>
                   {result.duplicates.length > 0 && (
                     <p className="text-amber-700 dark:text-amber-300">
-                      Mã bị trùng trong file (lấy dòng cuối): {result.duplicates.slice(0, 10).join(", ")}
+                      Mã bị trùng trong file (cần sửa trước khi import): {result.duplicates.slice(0, 10).join(", ")}
                       {result.duplicates.length > 10 && "…"}
                     </p>
                   )}
@@ -165,6 +166,9 @@ export function ImportDialog({ onDone }: { onDone: () => void }) {
                       ))}
                     </ul>
                   )}
+                  {(result.errors.length > 0 || result.duplicates.length > 0) && (
+                    <p className="text-amber-700 dark:text-amber-300">Chưa nhập dữ liệu. Hãy sửa file rồi chọn lại để tránh nhập thiếu hoặc ghi đè nhầm thí sinh.</p>
+                  )}
                 </div>
               )}
             </div>
@@ -173,7 +177,7 @@ export function ImportDialog({ onDone }: { onDone: () => void }) {
           {sheet && (
             <DialogFooter>
               <Button variant="outline" onClick={() => setSheet(null)}>Chọn file khác</Button>
-              <Button onClick={submit} disabled={busy || !hasRequired || !result?.valid.length}>
+              <Button onClick={submit} disabled={busy || !canImport}>
                 {busy ? <Loader2 className="animate-spin" /> : <Upload />}
                 Import {result?.valid.length ?? 0} thí sinh
               </Button>

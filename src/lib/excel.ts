@@ -1,4 +1,5 @@
 import * as XLSX from "xlsx";
+import { normalizeDepartment } from "@/lib/departments";
 import { formatDateTime, formatDuration, normalizePhone, normalizeText } from "@/lib/format";
 import {
   STATUS_LABEL,
@@ -21,12 +22,12 @@ export const FIELD_LABEL: Record<CandidateField, string> = {
 
 /** Các tên cột thường gặp (đã bỏ dấu, lowercase) để tự động map. */
 const ALIASES: Record<CandidateField, string[]> = {
-  code: ["ma ung vien", "ma uv", "ma thi sinh", "ma ts", "ma so", "ma", "id", "code", "candidate id", "sbd", "so bao danh", "stt"],
+  code: ["ma ung vien", "ma uv", "ma thi sinh", "ma ts", "ma so", "ma", "id", "code", "candidate id", "sbd", "so bao danh"],
   full_name: ["ho ten", "ho va ten", "ten", "ten ung vien", "ten thi sinh", "full name", "name", "fullname"],
   phone: ["sdt", "so dien thoai", "dien thoai", "phone", "phone number", "dt", "mobile"],
   email: ["email", "e-mail", "mail", "gmail", "dia chi email"],
   department: ["ban ung tuyen", "ban", "ban dang ky", "nguyen vong", "bo phan", "department", "team", "vi tri"],
-  shift: ["ca phong van", "ca", "ca pv", "khung gio", "thoi gian", "shift", "slot", "gio phong van"],
+  shift: ["ca phong van", "ca", "ca pv", "khung gio", "shift", "slot", "gio phong van"],
   cv_url: ["link cv", "cv", "link", "cv url", "portfolio", "link portfolio", "ho so", "url"],
 };
 
@@ -89,9 +90,12 @@ export function applyMapping(sheet: ParsedSheet, mapping: (CandidateField | null
     });
     rec.phone = normalizePhone(rec.phone);
     const rowNo = i + 2; // +1 header, +1 đánh số từ 1
-    if (!rec.code && !rec.full_name) return; // dòng rác
+    if (!rec.code && !rec.full_name && !rec.department && !rec.phone && !rec.email) return;
     if (!rec.code) return errors.push({ row: rowNo, message: "Thiếu mã ứng viên" });
     if (!rec.full_name) return errors.push({ row: rowNo, message: "Thiếu họ tên" });
+    const department = normalizeDepartment(rec.department);
+    if (!department) return errors.push({ row: rowNo, message: "Thiếu Ban hoặc Ban không thuộc CM, VH, TT, DE, HCTC" });
+    rec.department = department;
     valid.push(rec);
   });
   const seen = new Map<string, number>();

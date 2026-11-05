@@ -50,25 +50,32 @@ describe("autoMapHeaders", () => {
     const m = autoMapHeaders(["Mã", "Mã ứng viên", "Tên"]);
     expect(m.filter((x) => x === "code")).toHaveLength(1);
   });
+  it("không dùng STT của Google Form làm mã ứng viên", () => {
+    expect(autoMapHeaders(["Dấu thời gian", "STT", "Họ và tên", "Ban ứng tuyển"])).toEqual([
+      null, null, "full_name", "department",
+    ]);
+  });
 });
 
 describe("applyMapping", () => {
   it("lọc dòng thiếu dữ liệu, phát hiện mã trùng", () => {
     const sheet = {
       sheetName: "S",
-      headers: ["Mã", "Tên", "SĐT"],
+      headers: ["Mã", "Tên", "SĐT", "Ban"],
       rows: [
-        ["UV1", "A", "901234567"],
-        ["", "B", ""],
-        ["UV2", "", ""],
-        ["UV1", "A2", ""],
-        ["", "", ""],
+        ["UV1", "A", "901234567", "Chuyên Môn"],
+        ["", "B", "", "CM"],
+        ["UV2", "", "", "CM"],
+        ["UV1", "A2", "", "CM"],
+        ["UV3", "C", "", "Ban không hợp lệ"],
+        ["", "", "", ""],
       ],
     };
-    const r = applyMapping(sheet, ["code", "full_name", "phone"]);
+    const r = applyMapping(sheet, ["code", "full_name", "phone", "department"]);
     expect(r.valid).toHaveLength(2);
     expect(r.valid[0].phone).toBe("0901234567");
-    expect(r.errors.map((e) => e.row)).toEqual([3, 4]);
+    expect(r.valid[0].department).toBe("CM");
+    expect(r.errors.map((e) => e.row)).toEqual([3, 4, 6]);
     expect(r.duplicates).toEqual(["UV1"]);
   });
 });
