@@ -9,6 +9,7 @@ export const dynamic = "force-dynamic";
 export default async function CheckinPage() {
   const profile = await requireRole(["CHECKIN", "ADMIN", "COORDINATOR"]);
   const supabase = await createClient();
+  await supabase.rpc("activate_due_followups");
   const candidates = await fetchAll<Candidate>(supabase, "candidates");
   return <CheckinBoard initialCandidates={candidates} staffName={profile.full_name || profile.email} />;
 }

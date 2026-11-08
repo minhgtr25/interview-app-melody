@@ -127,11 +127,14 @@ export function applyMapping(sheet: ParsedSheet, mapping: (CandidateField | null
     valid.push(rec);
   });
   const byIdentity = new Map<string, MappedCandidate>();
+  const identityDepartments = new Map<string, Set<string>>();
   const duplicates: string[] = [];
   let mergedDuplicates = 0;
   for (const row of valid) {
     const key = normalizeStudentNumber(row.student_number) ?? `EMAIL:${row.email?.toLowerCase()}`;
-    const previous = byIdentity.get(key);
+    const department = row.department ?? "";
+    const applicationKey = `${key}|${department}`;
+    const previous = byIdentity.get(applicationKey);
     if (previous) {
       if (normalizeText(previous.full_name ?? "") !== normalizeText(row.full_name ?? "") ||
           (previous.email && row.email && previous.email.toLowerCase() !== row.email.toLowerCase())) {
@@ -140,7 +143,10 @@ export function applyMapping(sheet: ParsedSheet, mapping: (CandidateField | null
       }
       mergedDuplicates++;
     }
-    byIdentity.set(key, row);
+    const departments = identityDepartments.get(key) ?? new Set<string>();
+    departments.add(department);
+    identityDepartments.set(key, departments);
+    byIdentity.set(applicationKey, row);
   }
   return { valid: [...byIdentity.values()], errors, duplicates, invalidStudentRows, mergedDuplicates };
 }

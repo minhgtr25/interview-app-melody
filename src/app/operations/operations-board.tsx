@@ -14,6 +14,7 @@ import { useRealtimeRows } from "@/hooks/use-realtime-rows";
 import { DEPARTMENTS, type DepartmentCode } from "@/lib/departments";
 import { formatDateTime, formatDuration, normalizeText, safeUrl } from "@/lib/format";
 import { STATUS_LABEL, type Candidate, type CandidateStatus, type Evaluation, type InterviewTable, type Room, type RubricCriterion } from "@/lib/types";
+import { groupCandidateApplications } from "@/components/candidate-applications";
 import { cn } from "@/lib/utils";
 
 export function OperationsBoard({ role, staffName, initialCandidates, initialEvaluations, initialTables, initialRooms, criteria }: {
@@ -57,6 +58,14 @@ export function OperationsBoard({ role, staffName, initialCandidates, initialEva
     if (candidateStatus && candidate.status !== candidateStatus) return false;
     return !search || normalizeText(`${candidate.code} ${candidate.student_number ?? ""} ${candidate.full_name} ${candidate.phone ?? ""} ${candidate.email ?? ""}`).includes(search);
   }).sort((a, b) => a.code.localeCompare(b.code, "vi", { numeric: true })), [candidates.rows, department, candidateStatus, search]);
+
+  const groupByCandidate = useMemo(() => {
+    const map = new Map<string, ReturnType<typeof groupCandidateApplications>[number]>();
+    for (const group of groupCandidateApplications(candidates.rows)) {
+      for (const application of group.applications) map.set(application.id, group);
+    }
+    return map;
+  }, [candidates.rows]);
 
   const visibleRooms = useMemo(() => rooms.rows.map((room) => ({
     room,
@@ -126,8 +135,8 @@ export function OperationsBoard({ role, staffName, initialCandidates, initialEva
                 <TableCell className="font-mono text-xs">{candidate.student_number || "—"}</TableCell>
                 <TableCell className="font-medium">{candidate.full_name}</TableCell>
                 <TableCell>{candidate.phone || "—"}</TableCell>
-                <TableCell>{candidate.department || "—"}</TableCell>
-                <TableCell>{candidate.shift || "—"}</TableCell>
+                <TableCell>{groupByCandidate.get(candidate.id)?.departments.join(" · ") || candidate.department || "—"}</TableCell>
+                <TableCell>{groupByCandidate.get(candidate.id)?.shifts.join(" ; ") || candidate.shift || "—"}</TableCell>
                 <TableCell><StatusBadge status={candidate.status} /></TableCell>
                 <TableCell>{evaluation?.table_label || (candidate.table_id ? `${roomById.get(tables.rows.find((table) => table.id === candidate.table_id)?.room_id ?? "")?.name ?? ""} - ${tables.rows.find((table) => table.id === candidate.table_id)?.name ?? ""}` : "—")}</TableCell>
                 <TableCell>{candidate.added_by_name || "—"}</TableCell>
@@ -188,7 +197,7 @@ export function OperationsBoard({ role, staffName, initialCandidates, initialEva
       <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-lg">
         {selectedCandidate && <>
           <DialogHeader><DialogTitle>{selectedCandidate.full_name}</DialogTitle>
-            <DialogDescription>{selectedCandidate.code} · {selectedCandidate.department || "Chưa có Ban"} · {selectedCandidate.shift || "Chưa có ca"}</DialogDescription>
+            <DialogDescription>{selectedCandidate.code} · {groupByCandidate.get(selectedCandidate.id)?.departments.join(" · ") || selectedCandidate.department || "Chưa có Ban"} · {groupByCandidate.get(selectedCandidate.id)?.shifts.join(" ; ") || selectedCandidate.shift || "Chưa có ca"}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 text-sm">
             <StatusBadge status={selectedCandidate.status} />

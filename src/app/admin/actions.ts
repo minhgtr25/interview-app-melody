@@ -276,8 +276,9 @@ export async function importCandidates(rows: FormCandidateInput[]): Promise<Acti
       const name = row.full_name?.trim();
       const identity = studentNumber ?? (row.email ? `EMAIL:${row.email.trim().toLowerCase()}` : null);
       if (!identity) throw new Error("MSSV chưa hợp lệ và thiếu Email để đối chiếu");
-      if (seen.has(identity)) throw new Error(`Thí sinh trùng trong file: ${identity}`);
-      seen.add(identity);
+      const applicationIdentity = `${identity}|${department ?? ""}`;
+      if (seen.has(applicationIdentity)) throw new Error(`Thí sinh trùng trong file: ${identity}`);
+      seen.add(applicationIdentity);
       if (!name || name.length > 200) throw new Error(`Họ tên không hợp lệ (${identity})`);
       if (!gender) throw new Error(`Giới tính không hợp lệ (${identity})`);
       if (!department) throw new Error(`Ban không hợp lệ (${identity})`);

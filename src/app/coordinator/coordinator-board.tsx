@@ -31,6 +31,7 @@ import { cn } from "@/lib/utils";
 import { DEPARTMENTS } from "@/lib/departments";
 import type { DepartmentCode } from "@/lib/departments";
 import { DepartmentRadio } from "@/components/department-radio";
+import { groupCandidateApplications } from "@/components/candidate-applications";
 
 type Confirm =
   | { kind: "absent"; candidate: Candidate }
@@ -164,6 +165,13 @@ export function CoordinatorBoard({
   const status = cand.status === "live" && tbl.status === "live" && roomRows.status === "live" ? "live" : cand.status === "offline" || tbl.status === "offline" || roomRows.status === "offline" ? "offline" : "connecting";
 
   const candById = useMemo(() => new Map(cand.rows.map((c) => [c.id, c])), [cand.rows]);
+  const groupByCandidate = useMemo(() => {
+    const map = new Map<string, ReturnType<typeof groupCandidateApplications>[number]>();
+    for (const group of groupCandidateApplications(cand.rows)) {
+      for (const application of group.applications) map.set(application.id, group);
+    }
+    return map;
+  }, [cand.rows]);
 
   useEffect(() => {
     const incoming = cand.rows.filter((c) => c.source_candidate_id && c.status === "CHECKED_IN");
@@ -305,7 +313,9 @@ export function CoordinatorBoard({
               </span>
               <div className="min-w-0 flex-1">
                 <p className="truncate font-medium">{c.full_name}</p>
-                {c.source_candidate_id && <p className="text-xs font-semibold text-violet-700 dark:text-violet-300">Lượt 2 từ Chuyên Môn</p>}
+                {(c.source_candidate_id || (groupByCandidate.get(c.id)?.applications?.length ?? 0) > 1) && (
+                  <p className="text-xs font-semibold text-violet-700 dark:text-violet-300">Ban thứ hai của cùng thí sinh</p>
+                )}
                 <p className="truncate text-xs text-muted-foreground">
                   <span className="font-mono">{c.code}</span>
                   {c.student_number && <span className="font-mono"> · MSSV {c.student_number}</span>}

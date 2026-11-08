@@ -25,6 +25,7 @@ import { ImportDialog } from "./import-dialog";
 import { DepartmentRadio } from "@/components/department-radio";
 import { type DepartmentCode, isDepartmentCode } from "@/lib/departments";
 import { GENDERS } from "@/lib/personal-info";
+import { groupCandidateApplications } from "@/components/candidate-applications";
 
 const SELECT_CLS = "h-9 rounded-lg border border-input bg-background px-3 text-sm";
 const EMPTY: CandidateInput = { code: "", full_name: "", student_number: "", student_cohort: "", gender: "", facebook_url: "", phone: "", email: "", department: "", shift: "", cv_url: "" };
@@ -56,6 +57,13 @@ export function CandidatesManager({
   const [busy, setBusy] = useState(false);
 
   const evalBy = useMemo(() => new Map(evals.rows.map((e) => [e.candidate_id, e])), [evals.rows]);
+  const groupByCandidate = useMemo(() => {
+    const map = new Map<string, ReturnType<typeof groupCandidateApplications>[number]>();
+    for (const group of groupCandidateApplications(cand.rows)) {
+      for (const application of group.applications) map.set(application.id, group);
+    }
+    return map;
+  }, [cand.rows]);
 
   const filtered = useMemo(() => {
     const nq = normalizeText(q);
@@ -180,6 +188,7 @@ export function CandidatesManager({
           <TableBody>
             {filtered.map((c) => {
               const e = evalBy.get(c.id);
+              const group = groupByCandidate.get(c.id);
               return (
                 <TableRow key={c.id}>
                   <TableCell className="font-mono text-xs">{c.code}</TableCell>
@@ -188,8 +197,8 @@ export function CandidatesManager({
                   <TableCell>{GENDERS.find((gender) => gender.code === c.gender)?.name || "—"}</TableCell>
                   <TableCell>{c.student_cohort || "—"}</TableCell>
                   <TableCell className="tabular-nums">{c.phone}</TableCell>
-                  <TableCell>{c.department}</TableCell>
-                  <TableCell className="max-w-40 truncate">{c.shift}</TableCell>
+                  <TableCell>{group?.departments.join(" · ") || c.department}</TableCell>
+                  <TableCell className="max-w-40 truncate">{group?.shifts.join(" ; ") || c.shift}</TableCell>
                   <TableCell><StatusBadge status={c.status} /></TableCell>
                   <TableCell className="min-w-44 text-xs">
                     {c.added_by_name ? <>
@@ -298,7 +307,7 @@ export function CandidatesManager({
               <DialogHeader>
                 <DialogTitle>{viewing.full_name}</DialogTitle>
                 <DialogDescription>
-                  {viewing.code} · {[viewing.department, viewing.shift].filter(Boolean).join(" · ")}
+                  {viewing.code} · {groupByCandidate.get(viewing.id)?.departments.join(" · ") || viewing.department} · {groupByCandidate.get(viewing.id)?.shifts.join(" ; ") || viewing.shift}
                 </DialogDescription>
               </DialogHeader>
               <div className="grid gap-3 text-sm">
@@ -313,6 +322,7 @@ export function CandidatesManager({
                 <dl className="grid grid-cols-2 gap-2 text-xs">
                   <dt className="text-muted-foreground">Check-in</dt><dd>{formatDateTime(viewing.checked_in_at) || "—"}</dd>
                   <dt className="text-muted-foreground">MSSV</dt><dd className="font-mono">{viewing.student_number || viewing.student_number_raw || "—"}{viewing.student_number_raw && " (cần xác minh)"}</dd>
+                  <dt className="text-muted-foreground">Ban · Ca</dt><dd>{groupByCandidate.get(viewing.id)?.departments.join(" · ") || viewing.department || "—"}<br />{groupByCandidate.get(viewing.id)?.shifts.join(" ; ") || viewing.shift || "—"}</dd>
                   <dt className="text-muted-foreground">Khóa · Giới tính</dt><dd>{[viewing.student_cohort, GENDERS.find((gender) => gender.code === viewing.gender)?.name].filter(Boolean).join(" · ") || "—"}</dd>
                   <dt className="text-muted-foreground">Email</dt><dd className="break-all">{viewing.email || "—"}</dd>
                   <dt className="text-muted-foreground">SĐT</dt><dd>{viewing.phone || "—"}</dd>

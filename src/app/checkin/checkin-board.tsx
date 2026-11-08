@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 import { DepartmentRadio } from "@/components/department-radio";
 import { type DepartmentCode } from "@/lib/departments";
 import { GENDERS, type GenderCode, normalizeStudentNumber } from "@/lib/personal-info";
+import { groupCandidateApplications } from "@/components/candidate-applications";
 
 const NATIVE_SELECT =
   "h-10 rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50";
@@ -57,6 +58,14 @@ export function CheckinBoard({
     () => [...new Set(rows.map((r) => r.shift).filter(Boolean) as string[])].sort(),
     [rows]
   );
+
+  const groupByCandidate = useMemo(() => {
+    const map = new Map<string, ReturnType<typeof groupCandidateApplications>[number]>();
+    for (const group of groupCandidateApplications(rows)) {
+      for (const application of group.applications) map.set(application.id, group);
+    }
+    return map;
+  }, [rows]);
 
   const filtered = useMemo(() => {
     const q = normalizeText(deferredQuery);
@@ -277,8 +286,8 @@ export function CheckinBoard({
                   <TableCell className="font-mono text-xs">{c.student_number || "—"}</TableCell>
                   <TableCell className="font-medium">{c.full_name}</TableCell>
                   <TableCell className="tabular-nums">{c.phone}</TableCell>
-                  <TableCell>{c.department}</TableCell>
-                  <TableCell>{c.shift}</TableCell>
+                  <TableCell>{groupByCandidate.get(c.id)?.departments.join(" · ") || c.department}</TableCell>
+                  <TableCell>{groupByCandidate.get(c.id)?.shifts.join(" ; ") || c.shift}</TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
                       <StatusBadge status={c.status} />
@@ -338,7 +347,7 @@ export function CheckinBoard({
                     )}
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    {[c.department, c.shift].filter(Boolean).join(" · ")}
+                    {[groupByCandidate.get(c.id)?.departments.join(" · ") || c.department, groupByCandidate.get(c.id)?.shifts.join(" ; ") || c.shift].filter(Boolean).join(" · ")}
                   </p>
                 </div>
                 <StatusBadge status={c.status} />
