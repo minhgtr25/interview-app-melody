@@ -71,6 +71,7 @@ export interface Candidate {
   code: string;
   full_name: string;
   student_number: string | null;
+  student_number_raw: string | null;
   student_cohort: string | null;
   gender: import("@/lib/personal-info").GenderCode | null;
   facebook_url: string | null;
@@ -78,6 +79,7 @@ export interface Candidate {
   email: string | null;
   department: string | null;
   shift: string | null;
+  source_candidate_id: string | null;
   cv_url: string | null;
   status: CandidateStatus;
   checked_in_at: string | null;

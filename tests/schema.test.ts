@@ -217,9 +217,13 @@ describe("RLS", () => {
       "select code, status, shift, full_name from public.candidates where student_number = 'HE234567'");
     expect(after).toEqual({ code: before.code, status: "CHECKED_IN", shift: "Ca đã xác nhận", full_name: "Tên mới" });
     const invalid = [first[0], { ...first[0], student_number: "HE234568", email: "other@example.com" },
-      { ...first[0], student_number: "BAD", email: "bad@example.com" }];
+      { ...first[0], student_number: "BAD", email: null }];
     await expect(as(ADMIN, "select public.import_form_candidates($1::jsonb)", [JSON.stringify(invalid)])).rejects.toThrow(/MSSV/);
     expect((await superQuery("select id from public.candidates where student_number = 'HE234568'")).length).toBe(0);
+    await as(ADMIN, "select public.import_form_candidates($1::jsonb)", [JSON.stringify([{ ...first[0], student_number: "BAD", email: "bad@example.com", department: "ND" }])]);
+    const [needsReview] = await superQuery<{ student_number: string | null; student_number_raw: string; department: string }>(
+      "select student_number, student_number_raw, department from public.candidates where email = 'bad@example.com'");
+    expect(needsReview).toEqual({ student_number: null, student_number_raw: "BAD", department: "ND" });
   });
 
   it("người chưa có profile không đọc được gì", async () => {
@@ -511,6 +515,47 @@ describe("Vòng đời thí sinh", () => {
     const [candidate] = await superQuery<{ student_number: string; gender: string }>(
       "select student_number, gender from public.candidates where code = 'BS01'");
     expect(candidate).toEqual({ student_number: "HE123456", gender: "NAM" });
+  });
+
+  it("nhập đủ lịch ba ngày, gộp nhiều ca và không đổi trạng thái", async () => {
+    const rows = [
+      { student_number: "HE234567", email: "form@example.com", shift: "09/11/2026 18:30 (TT)" },
+      { student_number: "HE234567", email: "form@example.com", shift: "10/11/2026 19:00 (CM)" },
+      { student_number: "BAD", email: "bad@example.com", shift: "11/11/2026 20:00 (ND)" },
+    ];
+    await expect(as(CHECKIN, "select public.import_candidate_schedules($1::jsonb)", [JSON.stringify(rows)])).rejects.toThrow(/quyền/);
+    await expect(as(ADMIN, "select public.import_candidate_schedules($1::jsonb)", [JSON.stringify([...rows, { student_number: "", email: "missing@example.com", shift: "11/11/2026 20:00 (ND)" }])])).rejects.toThrow(/đối chiếu/);
+    await as(ADMIN, "select public.import_candidate_schedules($1::jsonb)", [JSON.stringify(rows)]);
+    const [original] = await superQuery<{ shift: string; status: string }>("select shift, status from public.candidates where student_number = 'HE234567'");
+    expect(original).toEqual({ shift: "09/11/2026 18:30 (TT) · 10/11/2026 19:00 (CM)", status: "CHECKED_IN" });
+    const [invalid] = await superQuery<{ shift: string }>("select shift from public.candidates where email = 'bad@example.com'");
+    expect(invalid.shift).toBe("11/11/2026 20:00 (ND)");
+  });
+
+  it("Chuyên Môn chuyển lượt hai sang ND và mỗi Ban có phiếu riêng", async () => {
+    const [candidate] = await superQuery<{ id: string }>("insert into public.candidates (code, full_name, department, status, checked_in_at, student_number) values ('CM2','Ứng viên lượt hai','CM','CHECKED_IN',now(),'HE999999') returning id");
+    await as(COORD, "select public.assign_candidate($1,$2)", [candidate.id, tableA]);
+    await as(JUDGE, "select public.start_interview($1)", [tableA]);
+    const scores = JSON.stringify(Object.fromEntries(crit.map((criterion) => [criterion.id, 8])));
+    await expect(as(JUDGE, "select public.submit_evaluation_with_referral($1,$2::jsonb,$3,$4)", [tableA, scores, "", "CM"]))
+      .rejects.toThrow(/Ban thứ hai/);
+    await as(JUDGE, "select public.submit_evaluation_with_referral($1,$2::jsonb,$3,$4)", [tableA, scores, "", "ND"]);
+    const [second] = await superQuery<{ id: string; status: string; department: string; source_candidate_id: string; student_number: string | null }>(
+      "select id, status, department, source_candidate_id, student_number from public.candidates where source_candidate_id = $1", [candidate.id]);
+    expect(second).toMatchObject({ status: "CHECKED_IN", department: "ND", source_candidate_id: candidate.id, student_number: null });
+    const [ndTable] = await superQuery<{ id: string }>("select id from public.tables where department = 'TT' limit 1");
+    await superQuery("update public.tables set department = 'ND' where id = $1", [ndTable.id]);
+    await as(COORD, "select public.assign_candidate($1,$2)", [second.id, ndTable.id]);
+    await as(JUDGE3, "select public.start_interview($1)", [ndTable.id]);
+    await as(JUDGE3, "select public.submit_evaluation($1,$2::jsonb,$3)", [ndTable.id, scores, "Lượt hai"]);
+    expect((await superQuery("select id from public.evaluations where candidate_id in ($1,$2)", [candidate.id, second.id])).length).toBe(2);
+  });
+
+  it("migration ND và lượt hai chạy lại được", async () => {
+    const migration = readFileSync(new URL("../supabase/migrations/20261108_departments_and_referrals.sql", import.meta.url), "utf8");
+    await db.exec(migration);
+    await db.exec(migration);
+    expect((await superQuery("select id from public.candidates where source_candidate_id is not null")).length).toBeGreaterThan(0);
   });
 });
 

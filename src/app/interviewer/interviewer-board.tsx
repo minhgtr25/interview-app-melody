@@ -22,8 +22,10 @@ import { createClient, prepareRealtime } from "@/lib/supabase/client";
 import { errorMessage, safeUrl } from "@/lib/format";
 import type { Candidate, InterviewTable, OpsMessage, Room, RubricCriterion } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { DepartmentRadio } from "@/components/department-radio";
+import type { DepartmentCode } from "@/lib/departments";
 
-type Draft = { scores: Record<string, number>; comment: string };
+type Draft = { scores: Record<string, number>; comment: string; secondDepartment: DepartmentCode | "" };
 
 const draftKey = (candidateId: string) => `eval-draft:${candidateId}`;
 
@@ -32,12 +34,12 @@ function loadDraft(candidateId: string): Draft {
     const raw = localStorage.getItem(draftKey(candidateId));
     if (raw) {
       const d = JSON.parse(raw) as Draft;
-      if (d && typeof d === "object" && d.scores) return { scores: d.scores, comment: d.comment ?? "" };
+      if (d && typeof d === "object" && d.scores) return { scores: d.scores, comment: d.comment ?? "", secondDepartment: d.secondDepartment ?? "" };
     }
   } catch {
     /* storage bị chặn */
   }
-  return { scores: {}, comment: "" };
+  return { scores: {}, comment: "", secondDepartment: "" };
 }
 
 function saveDraft(candidateId: string, d: Draft) {
@@ -137,7 +139,7 @@ export function InterviewerBoard({
 
   const status = tbl.status === "live" && cand.status === "live" ? "live" : tbl.status === "offline" || cand.status === "offline" ? "offline" : "connecting";
 
-  const [draft, setDraft] = useState<Draft>({ scores: {}, comment: "" });
+  const [draft, setDraft] = useState<Draft>({ scores: {}, comment: "", secondDepartment: "" });
   const [busy, setBusy] = useState<"start" | "submit" | "return" | null>(null);
   const [confirm, setConfirm] = useState<"submit" | "return" | null>(null);
   const [chatOpen, setChatOpen] = useState(false);
@@ -200,7 +202,7 @@ export function InterviewerBoard({
   // Nạp nháp khi đổi thí sinh (giữ điểm nếu lỡ tải lại trang)
   const candId = candidate?.id;
   useEffect(() => {
-    setDraft(candId ? loadDraft(candId) : { scores: {}, comment: "" });
+    setDraft(candId ? loadDraft(candId) : { scores: {}, comment: "", secondDepartment: "" });
   }, [candId]);
 
   // Thông báo khi có thí sinh mới được gán
@@ -254,17 +256,24 @@ export function InterviewerBoard({
     setConfirm(null);
     if (!candidate) return;
     setBusy("submit");
-    const { error } = await createClient().rpc("submit_evaluation", {
+    const client = createClient();
+    let { error } = await client.rpc("submit_evaluation_with_referral", {
       p_table_id: tableId,
       p_scores: draft.scores,
       p_comment: draft.comment,
+      p_second_department: candidate.department === "CM" && table?.department === "CM" ? draft.secondDepartment || null : null,
     });
+    if (error?.code === "PGRST202" && !draft.secondDepartment) {
+      ({ error } = await client.rpc("submit_evaluation", {
+        p_table_id: tableId, p_scores: draft.scores, p_comment: draft.comment,
+      }));
+    }
     setBusy(null);
-    if (error) return toast.error(errorMessage(error));
+    if (error) return toast.error(error.code === "PGRST202" ? "Database chưa cập nhật chức năng Ban thứ hai. Chạy migration 20261108_departments_and_referrals.sql." : errorMessage(error));
     clearDraft(candidate.id);
     tbl.patchRow(tableId, { status: "AVAILABLE", current_candidate_id: null, assigned_at: null, started_at: null });
     cand.patchRow(candidate.id, { status: "COMPLETED", interview_ended_at: new Date().toISOString() });
-    toast.success(`Đã nộp đánh giá cho ${candidate.full_name}`);
+    toast.success(draft.secondDepartment ? `Đã nộp đánh giá và chuyển nguyện vọng ${draft.secondDepartment} cho Điều phối` : `Đã nộp đánh giá cho ${candidate.full_name}`);
   }
 
   async function returnToQueue() {
@@ -485,6 +494,14 @@ export function InterviewerBoard({
                   maxLength={5000}
                 />
               </div>
+              {candidate.department === "CM" && table.department === "CM" && !candidate.source_candidate_id && (
+                <div className="rounded-2xl border bg-card p-4">
+                  <p className="mb-1 font-semibold">Nguyện vọng phỏng vấn Ban thứ hai</p>
+                  <p className="mb-3 text-sm text-muted-foreground">Chỉ chọn khi thí sinh Chuyên Môn muốn phỏng vấn thêm nếu không đỗ Chuyên Môn. Sau khi nộp, thí sinh sẽ xuất hiện ở hàng chờ Điều phối của Ban đã chọn.</p>
+                  <DepartmentRadio name={`second-department-${candidate.id}`} value={draft.secondDepartment}
+                    onChange={(value) => update({ secondDepartment: value })} allowAll noneLabel="Không có Ban thứ hai" exclude="CM" />
+                </div>
+              )}
             </section>
           </div>
         )}

@@ -269,7 +269,7 @@ export function RoomsManager({ rooms, tables, profiles }: { rooms: Room[]; table
       </Button>
     </section>
 
-    <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+    <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
       {DEPARTMENTS.map((department) => {
         const matching = tables.filter((table) => table.department === department.code);
         const roomCount = new Set(matching.map((table) => table.room_id)).size;

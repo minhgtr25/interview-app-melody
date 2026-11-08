@@ -3,16 +3,18 @@
 import { DEPARTMENTS, type DepartmentCode } from "@/lib/departments";
 import { cn } from "@/lib/utils";
 
-export function DepartmentRadio({ name, value, onChange, allowAll = false, disabled = false }: {
+export function DepartmentRadio({ name, value, onChange, allowAll = false, noneLabel = "Tất cả ban", exclude, disabled = false }: {
   name: string;
   value: DepartmentCode | "";
   onChange: (value: DepartmentCode | "") => void;
   allowAll?: boolean;
+  noneLabel?: string;
+  exclude?: DepartmentCode;
   disabled?: boolean;
 }) {
   const options: { code: DepartmentCode | ""; name: string }[] = [
-    ...(allowAll ? [{ code: "" as const, name: "Tất cả ban" }] : []),
-    ...DEPARTMENTS,
+    ...(allowAll ? [{ code: "" as const, name: noneLabel }] : []),
+    ...DEPARTMENTS.filter((department) => department.code !== exclude),
   ];
   return (
     <fieldset className="flex flex-wrap gap-1.5" aria-label="Chọn ban">

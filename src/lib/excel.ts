@@ -58,25 +58,39 @@ export function autoMapHeaders(headers: string[]): (CandidateField | null)[] {
   return result;
 }
 
-export type ParsedSheet = { headers: string[]; rows: unknown[][]; sheetName: string };
+export type ParsedSheet = { headers: string[]; rows: unknown[][]; rowNumbers?: number[]; skippedRed?: number; sheetName: string };
 
 export async function readSpreadsheet(file: File): Promise<ParsedSheet> {
   const buf = await file.arrayBuffer();
-  const wb = XLSX.read(buf, { type: "array", cellDates: true });
+  const wb = XLSX.read(buf, { type: "array", cellDates: true, cellStyles: true });
   const sheetName = wb.SheetNames[0];
   if (!sheetName) throw new Error("File không có sheet nào");
-  const matrix = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[sheetName], {
+  const worksheet = wb.Sheets[sheetName];
+  const matrix = XLSX.utils.sheet_to_json<unknown[]>(worksheet, {
     header: 1,
     raw: false, // lấy chuỗi hiển thị (giữ số 0 đầu nếu ô định dạng Text)
     defval: "",
-    blankrows: false,
+    blankrows: true,
   });
   // Bỏ các dòng trống đầu file, dòng đầu tiên có dữ liệu là header
   const start = matrix.findIndex((r) => r.some((v) => String(v).trim() !== ""));
   if (start === -1) throw new Error("File trống");
   const headers = matrix[start].map((h) => String(h).trim());
-  const rows = matrix.slice(start + 1).filter((r) => r.some((v) => String(v).trim() !== ""));
-  return { headers, rows, sheetName };
+  const range = XLSX.utils.decode_range(worksheet["!ref"] ?? "A1");
+  const rows: unknown[][] = [];
+  const rowNumbers: number[] = [];
+  let skippedRed = 0;
+  matrix.slice(start + 1).forEach((r, offset) => {
+    if (!r.some((v) => String(v).trim() !== "")) return;
+    const rowNumber = range.s.r + start + offset + 2;
+    const redCells = Array.from({ length: Math.min(r.length, 8) }, (_, col) => {
+      const address = XLSX.utils.encode_cell({ r: rowNumber - 1, c: range.s.c + col });
+      return worksheet[address]?.s?.fgColor?.rgb?.toUpperCase().endsWith("FF0000") ? 1 : 0;
+    }).reduce<number>((sum, red) => sum + red, 0);
+    if (redCells >= 2) { skippedRed++; return; }
+    rows.push(r); rowNumbers.push(rowNumber);
+  });
+  return { headers, rows, rowNumbers, skippedRed, sheetName };
 }
 
 export type MappedCandidate = Record<CandidateField, string | null>;
@@ -84,6 +98,7 @@ export type MappedCandidate = Record<CandidateField, string | null>;
 export function applyMapping(sheet: ParsedSheet, mapping: (CandidateField | null)[]) {
   const valid: MappedCandidate[] = [];
   const errors: { row: number; message: string }[] = [];
+  const invalidStudentRows: number[] = [];
   sheet.rows.forEach((r, i) => {
     const rec: MappedCandidate = { full_name: null, student_number: null, student_cohort: null, gender: null, phone: null, email: null, facebook_url: null, department: null };
     mapping.forEach((field, col) => {
@@ -92,26 +107,42 @@ export function applyMapping(sheet: ParsedSheet, mapping: (CandidateField | null
       if (v) rec[field] = v;
     });
     rec.phone = normalizePhone(rec.phone);
-    const rowNo = i + 2; // +1 header, +1 đánh số từ 1
+    const rowNo = sheet.rowNumbers?.[i] ?? i + 2;
     if (!rec.full_name && !rec.student_number && !rec.department && !rec.phone && !rec.email) return;
     if (!rec.full_name) return errors.push({ row: rowNo, message: "Thiếu họ tên" });
     const studentNumber = normalizeStudentNumber(rec.student_number);
-    if (!studentNumber) return errors.push({ row: rowNo, message: "MSSV phải gồm đúng 8 chữ hoặc số" });
-    rec.student_number = studentNumber;
+    if (!studentNumber) {
+      if (!rec.email) return errors.push({ row: rowNo, message: "MSSV chưa hợp lệ và thiếu Email để đối chiếu" });
+      invalidStudentRows.push(rowNo);
+    }
+    rec.student_number = studentNumber ?? rec.student_number;
     const gender = normalizeGender(rec.gender);
     if (!gender) return errors.push({ row: rowNo, message: "Thiếu Giới tính hoặc giá trị không hợp lệ" });
     rec.gender = gender;
     const department = normalizeDepartment(rec.department);
-    if (!department) return errors.push({ row: rowNo, message: "Thiếu Ban hoặc Ban không thuộc CM, VH, TT, DE, HCTC" });
+    if (!department) return errors.push({ row: rowNo, message: "Thiếu Ban hoặc Ban không thuộc CM, VH, TT, ND, DE, HCTC" });
     rec.department = department;
     if (rec.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rec.email)) return errors.push({ row: rowNo, message: "Email không hợp lệ" });
     if (rec.facebook_url && !safeUrl(rec.facebook_url)) return errors.push({ row: rowNo, message: "Link Facebook không hợp lệ" });
     valid.push(rec);
   });
-  const seen = new Map<string, number>();
-  valid.forEach((v) => seen.set(v.student_number!, (seen.get(v.student_number!) ?? 0) + 1));
-  const duplicates = [...seen.entries()].filter(([, n]) => n > 1).map(([c]) => c);
-  return { valid, errors, duplicates };
+  const byIdentity = new Map<string, MappedCandidate>();
+  const duplicates: string[] = [];
+  let mergedDuplicates = 0;
+  for (const row of valid) {
+    const key = normalizeStudentNumber(row.student_number) ?? `EMAIL:${row.email?.toLowerCase()}`;
+    const previous = byIdentity.get(key);
+    if (previous) {
+      if (normalizeText(previous.full_name ?? "") !== normalizeText(row.full_name ?? "") ||
+          (previous.email && row.email && previous.email.toLowerCase() !== row.email.toLowerCase())) {
+        duplicates.push(key);
+        continue;
+      }
+      mergedDuplicates++;
+    }
+    byIdentity.set(key, row);
+  }
+  return { valid: [...byIdentity.values()], errors, duplicates, invalidStudentRows, mergedDuplicates };
 }
 
 /** File mẫu để Admin điền danh sách. */
@@ -138,10 +169,11 @@ export function exportResults(
   criteria: RubricCriterion[]
 ) {
   const evalBy = new Map(evaluations.map((e) => [e.candidate_id, e]));
+  const candidateById = new Map(candidates.map((candidate) => [candidate.id, candidate]));
   const crit = [...criteria].sort((a, b) => a.sort_order - b.sort_order);
 
   const header = [
-    "Mã ứng viên", "MSSV", "Họ tên", "Khóa", "Giới tính", "SĐT", "Email", "Facebook", "Ban ứng tuyển", "Ca phỏng vấn", "Trạng thái",
+    "Mã ứng viên", "MSSV", "MSSV cần xác minh", "Lượt phỏng vấn", "Họ tên", "Khóa", "Giới tính", "SĐT", "Email", "Facebook", "Ban ứng tuyển", "Ca phỏng vấn", "Trạng thái",
     ...crit.map((c) => `${c.name} (/${c.max_score})`),
     "Điểm TB (/10)", "Nhận xét", "Thời lượng (mm:ss)", "Người chấm", "Phòng - Bàn",
     "Giờ check-in", "Bắt đầu PV", "Kết thúc PV", "Link CV",
@@ -155,9 +187,10 @@ export function exportResults(
 
   const rows = sorted.map((c) => {
     const e = evalBy.get(c.id);
+    const source = c.source_candidate_id ? candidateById.get(c.source_candidate_id) : undefined;
     const dur = e?.duration_seconds ?? c.duration_seconds;
     return [
-      c.code, c.student_number ?? "", c.full_name, c.student_cohort ?? "",
+      c.code, c.student_number ?? source?.student_number ?? "", c.student_number_raw ?? "", source ? `Lượt 2 từ ${source.code}` : "Lượt 1", c.full_name, c.student_cohort ?? "",
       GENDERS.find((gender) => gender.code === c.gender)?.name ?? "", c.phone ?? "", c.email ?? "",
       c.facebook_url ?? "", c.department ?? "", c.shift ?? "", STATUS_LABEL[c.status],
       ...crit.map((k) => (e?.scores?.[k.id] != null ? Number(e.scores[k.id]) : "")),

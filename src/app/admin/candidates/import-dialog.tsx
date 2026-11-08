@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { toast } from "sonner";
-import { FileSpreadsheet, Loader2, Upload, AlertTriangle, Download } from "lucide-react";
+import { FileSpreadsheet, Loader2, Upload, AlertTriangle, Download, CalendarDays } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -11,6 +11,8 @@ import {
   type CandidateField, type ParsedSheet,
 } from "@/lib/excel";
 import { importCandidates } from "../actions";
+import { importSchedules } from "../actions";
+import { readInterviewSchedule, type ScheduleImportRow } from "@/lib/schedule";
 
 const FIELDS = Object.keys(FIELD_LABEL) as CandidateField[];
 const SELECT_CLS = "h-8 w-full rounded-md border border-input bg-background px-2 text-xs";
@@ -21,6 +23,9 @@ export function ImportDialog({ onDone }: { onDone: () => void }) {
   const [fileName, setFileName] = useState("");
   const [mapping, setMapping] = useState<(CandidateField | null)[]>([]);
   const [busy, setBusy] = useState(false);
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [scheduleYear, setScheduleYear] = useState(new Date().getFullYear());
+  const [schedule, setSchedule] = useState<{ fileName: string; rows: ScheduleImportRow[]; days: string[] } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   async function onFile(file: File | undefined) {
@@ -64,17 +69,57 @@ export function ImportDialog({ onDone }: { onDone: () => void }) {
     onDone();
   }
 
+  async function onScheduleFile(file: File | undefined) {
+    if (!file) return;
+    try {
+      const parsed = await readInterviewSchedule(file, scheduleYear);
+      setSchedule({ fileName: file.name, ...parsed });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Không đọc được lịch");
+    }
+  }
+
+  async function submitSchedule() {
+    if (!schedule || busy) return;
+    setBusy(true);
+    const result = await importSchedules(schedule.rows);
+    setBusy(false);
+    if (!result.ok) return toast.error(result.error);
+    toast.success(`Đã cập nhật ${result.data?.count ?? 0} dòng lịch phỏng vấn`);
+    setScheduleOpen(false);
+    setSchedule(null);
+    onDone();
+  }
+
   return (
     <>
       <Button onClick={() => setOpen(true)}>
         <Upload /> Import Excel
       </Button>
+      <Button variant="outline" onClick={() => setScheduleOpen(true)}><CalendarDays /> Import lịch phỏng vấn</Button>
+      <Dialog open={scheduleOpen} onOpenChange={(value) => { setScheduleOpen(value); if (!value) setSchedule(null); }}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Import lịch phỏng vấn vào Ca</DialogTitle>
+            <DialogDescription>Nhập danh sách thí sinh trước. Lịch 09–11/11 được đối chiếu bằng MSSV hoặc Email; mọi dòng phải khớp thì mới cập nhật. Nhiều lịch của cùng một thí sinh sẽ được giữ chung trong Ca.</DialogDescription>
+          </DialogHeader>
+          <label className="grid gap-1 text-sm">Năm phỏng vấn
+            <input type="number" min="2020" max="2100" value={scheduleYear} onChange={(event) => { setScheduleYear(Number(event.target.value)); setSchedule(null); }} className="h-10 rounded-md border border-input bg-background px-3" />
+          </label>
+          <label className="grid cursor-pointer gap-2 rounded-lg border border-dashed p-5 text-sm hover:bg-muted/50">
+            <span>Chọn file Excel lịch phỏng vấn</span>
+            <input type="file" accept=".xlsx,.xls" onChange={(event) => void onScheduleFile(event.target.files?.[0])} />
+          </label>
+          {schedule && <p className="text-sm"><b>{schedule.fileName}</b><br />{schedule.rows.length} lượt · {schedule.days.join(", ")}</p>}
+          <DialogFooter><Button onClick={() => void submitSchedule()} disabled={!schedule || busy}>{busy ? <Loader2 className="animate-spin" /> : <CalendarDays />} Cập nhật Ca</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
       <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) setSheet(null); }}>
         <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-4xl">
           <DialogHeader>
             <DialogTitle>Import danh sách thí sinh</DialogTitle>
             <DialogDescription>
-              Hỗ trợ .xlsx, .xls, .csv từ Google Form. Chỉ lấy thông tin cá nhân và Ban; bỏ qua Ca cùng các câu trả lời chuyên môn.
+              Hỗ trợ .xlsx, .xls, .csv từ Google Form. Chỉ lấy thông tin cá nhân và Ban; bỏ qua Ca cùng các câu trả lời chuyên môn. Dòng tô đỏ được loại khỏi file nhập.
               Hệ thống tạo mã ứng viên riêng, dùng MSSV để nhận diện khi import lại và giữ nguyên trạng thái hiện tại.
             </DialogDescription>
           </DialogHeader>
@@ -106,6 +151,7 @@ export function ImportDialog({ onDone }: { onDone: () => void }) {
               <p className="text-sm">
                 <b>{fileName}</b> · sheet “{sheet.sheetName}” · {sheet.rows.length} dòng
               </p>
+              {!!sheet.skippedRed && <p className="text-sm font-medium text-red-700">Đã loại {sheet.skippedRed} đơn tô đỏ.</p>}
               <p className="text-xs text-muted-foreground">Xem trước chỉ hiện các cột đã chọn nhập. Các câu trả lời khác không được gửi vào database.</p>
               <div className="overflow-x-auto rounded-lg border">
                 <Table>
@@ -160,6 +206,8 @@ export function ImportDialog({ onDone }: { onDone: () => void }) {
                       {result.duplicates.length > 10 && "…"}
                     </p>
                   )}
+                  {result.mergedDuplicates > 0 && <p className="text-sm text-muted-foreground">Đã gộp {result.mergedDuplicates} đơn nộp lặp cùng MSSV.</p>}
+                  {result.invalidStudentRows.length > 0 && <p className="text-sm text-amber-700 dark:text-amber-300">{result.invalidStudentRows.length} dòng có MSSV chưa đúng 8 ký tự (dòng {result.invalidStudentRows.join(", ")}). Vẫn nhập bằng Email; Admin cần xác minh và sửa MSSV sau.</p>}
                   {result.errors.length > 0 && (
                     <ul className="max-h-24 overflow-y-auto text-xs text-red-600">
                       {result.errors.slice(0, 50).map((e) => (

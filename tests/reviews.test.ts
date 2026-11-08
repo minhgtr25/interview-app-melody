@@ -26,5 +26,7 @@ describe("department review access", () => {
     expect(verifyReviewSession(token, "wrong-secret")).toBeNull();
     const expired = signReviewSession({ department: "CM", generation: "g1", expires: Date.now() - 1 }, "secret");
     expect(verifyReviewSession(expired, "secret")).toBeNull();
+    const nd = signReviewSession({ department: "ND", generation: "g2", expires: Date.now() + 60000 }, "secret");
+    expect(verifyReviewSession(nd, "secret")?.department).toBe("ND");
   });
 });

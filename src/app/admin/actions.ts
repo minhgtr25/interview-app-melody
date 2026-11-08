@@ -182,6 +182,7 @@ export type CandidateInput = {
   code: string;
   full_name: string;
   student_number: string | null;
+  student_number_raw?: string | null;
   student_cohort: string | null;
   gender: string | null;
   facebook_url: string | null;
@@ -203,7 +204,7 @@ function cleanCandidate(c: CandidateInput): CandidateInput {
   if (!name) throw new Error(`Thiếu họ tên (mã ${code})`);
   const department = t(c.department, 120);
   const normalizedDepartment = normalizeDepartment(department);
-  if (!normalizedDepartment) throw new Error(`Ban không hợp lệ (mã ${code}). Chọn CM, VH, TT, DE hoặc HCTC`);
+  if (!normalizedDepartment) throw new Error(`Ban không hợp lệ (mã ${code}). Chọn CM, VH, TT, ND, DE hoặc HCTC`);
   const rawStudentNumber = t(c.student_number, 32);
   const studentNumber = rawStudentNumber ? normalizeStudentNumber(rawStudentNumber) : null;
   if (rawStudentNumber && !studentNumber) throw new Error(`MSSV phải gồm đúng 8 chữ hoặc số (mã ${code})`);
@@ -214,6 +215,7 @@ function cleanCandidate(c: CandidateInput): CandidateInput {
     code,
     full_name: name,
     student_number: studentNumber,
+    student_number_raw: studentNumber ? null : t(c.student_number_raw, 120),
     student_cohort: t(c.student_cohort, 32),
     gender,
     facebook_url: t(c.facebook_url, 2000),
@@ -236,6 +238,30 @@ export type FormCandidateInput = {
   department: string;
 };
 
+export async function importSchedules(rows: { student_number: string | null; email: string | null; shift: string }[]): Promise<ActionResult<{ count: number }>> {
+  try {
+    await assertAdmin();
+    if (!Array.isArray(rows) || rows.length < 1 || rows.length > 5000) throw new Error("Lịch phải có từ 1 đến 5000 dòng");
+    const clean = rows.map((row) => ({
+      student_number: String(row.student_number ?? "").trim().toUpperCase(),
+      email: String(row.email ?? "").trim().toLowerCase(),
+      shift: String(row.shift ?? "").trim(),
+    }));
+    if (clean.some((row) => (!row.student_number && !row.email) || !row.shift || row.shift.length > 100)) {
+      throw new Error("Có dòng lịch thiếu thông tin nhận diện hoặc Ca không hợp lệ");
+    }
+    const { data, error } = await (await createClient()).rpc("import_candidate_schedules", { p_rows: clean });
+    if (error) {
+      if (error.code === "PGRST202") throw new Error("Database chưa cập nhật. Chạy migration 20261108_departments_and_referrals.sql trước khi nhập lịch.");
+      throw error;
+    }
+    revalidatePath("/admin/candidates");
+    return { ok: true, data: { count: Number(data ?? 0) } };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
 /** Ghi toàn bộ file trong một transaction qua RPC; nhập lại theo MSSV. */
 export async function importCandidates(rows: FormCandidateInput[]): Promise<ActionResult<{ count: number }>> {
   try {
@@ -248,14 +274,15 @@ export async function importCandidates(rows: FormCandidateInput[]): Promise<Acti
       const gender = normalizeGender(row.gender);
       const department = normalizeDepartment(row.department);
       const name = row.full_name?.trim();
-      if (!studentNumber) throw new Error("MSSV phải gồm đúng 8 chữ hoặc số");
-      if (seen.has(studentNumber)) throw new Error(`MSSV trùng trong file: ${studentNumber}`);
-      seen.add(studentNumber);
-      if (!name || name.length > 200) throw new Error(`Họ tên không hợp lệ (MSSV ${studentNumber})`);
-      if (!gender) throw new Error(`Giới tính không hợp lệ (MSSV ${studentNumber})`);
-      if (!department) throw new Error(`Ban không hợp lệ (MSSV ${studentNumber})`);
+      const identity = studentNumber ?? (row.email ? `EMAIL:${row.email.trim().toLowerCase()}` : null);
+      if (!identity) throw new Error("MSSV chưa hợp lệ và thiếu Email để đối chiếu");
+      if (seen.has(identity)) throw new Error(`Thí sinh trùng trong file: ${identity}`);
+      seen.add(identity);
+      if (!name || name.length > 200) throw new Error(`Họ tên không hợp lệ (${identity})`);
+      if (!gender) throw new Error(`Giới tính không hợp lệ (${identity})`);
+      if (!department) throw new Error(`Ban không hợp lệ (${identity})`);
       return {
-        student_number: studentNumber,
+        student_number: studentNumber ?? row.student_number.trim().toUpperCase(),
         full_name: name,
         student_cohort: row.student_cohort?.trim() || null,
         gender,

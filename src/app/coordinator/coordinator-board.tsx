@@ -68,6 +68,7 @@ export function CoordinatorBoard({
   const [unreadTables, setUnreadTables] = useState<Set<string>>(() => new Set());
   const [displayModeBusy, setDisplayModeBusy] = useState(false);
   const [alarms, setAlarms] = useState<{ id: string; label: string; body: string; tableId: string; fading: boolean }[]>([]);
+  const seenSecondInterviews = useRef<Set<string> | null>(null);
   const tablesRef = useRef(tbl.rows);
   const roomsRef = useRef(roomRows.rows);
   const chatTableIdRef = useRef(chatTableId);
@@ -163,6 +164,18 @@ export function CoordinatorBoard({
   const status = cand.status === "live" && tbl.status === "live" && roomRows.status === "live" ? "live" : cand.status === "offline" || tbl.status === "offline" || roomRows.status === "offline" ? "offline" : "connecting";
 
   const candById = useMemo(() => new Map(cand.rows.map((c) => [c.id, c])), [cand.rows]);
+
+  useEffect(() => {
+    const incoming = cand.rows.filter((c) => c.source_candidate_id && c.status === "CHECKED_IN");
+    if (seenSecondInterviews.current) {
+      for (const candidate of incoming) if (!seenSecondInterviews.current.has(candidate.id)) {
+        toast.info(`Có lượt phỏng vấn Ban thứ hai: ${candidate.department}`, {
+          description: `${candidate.full_name} đã được Giám khảo Chuyên Môn chuyển sang hàng chờ.`, duration: 12000,
+        });
+      }
+    }
+    seenSecondInterviews.current = new Set(incoming.map((c) => c.id));
+  }, [cand.rows]);
 
   const queue = useMemo(
     () =>
@@ -292,6 +305,7 @@ export function CoordinatorBoard({
               </span>
               <div className="min-w-0 flex-1">
                 <p className="truncate font-medium">{c.full_name}</p>
+                {c.source_candidate_id && <p className="text-xs font-semibold text-violet-700 dark:text-violet-300">Lượt 2 từ Chuyên Môn</p>}
                 <p className="truncate text-xs text-muted-foreground">
                   <span className="font-mono">{c.code}</span>
                   {c.student_number && <span className="font-mono"> · MSSV {c.student_number}</span>}

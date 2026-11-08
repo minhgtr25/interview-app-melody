@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { applyMapping, autoMapHeaders } from "@/lib/excel";
 import { formatDuration, normalizePhone, normalizeText, safeUrl } from "@/lib/format";
+import * as XLSX from "xlsx";
+import { readInterviewSchedule } from "@/lib/schedule";
 
 describe("formatDuration", () => {
   it("định dạng mm:ss", () => {
@@ -75,11 +77,31 @@ describe("applyMapping", () => {
       ],
     };
     const r = applyMapping(sheet, ["student_number", "full_name", "gender", "phone", "department"]);
-    expect(r.valid).toHaveLength(3);
+    expect(r.valid).toHaveLength(2);
     expect(r.valid[0].phone).toBe("0901234567");
     expect(r.valid[0].department).toBe("CM");
-    expect(r.valid[2].department).toBe("TT");
+    expect(r.valid[1].department).toBe("ND");
     expect(r.errors.map((e) => e.row)).toEqual([3, 4, 6]);
     expect(r.duplicates).toEqual(["HE123456"]);
+  });
+});
+
+describe("readInterviewSchedule", () => {
+  it("đọc ba ngày kể cả sheet bắt đầu từ cột B và giữ hai lịch của một thí sinh", async () => {
+    const workbook = XLSX.utils.book_new();
+    for (const [day, hour, dept] of [["0911", "18h30", "Chuyên môn"], ["1011", "19h00", "Nội dung"], ["1111", "20h00", "Văn hoá"]]) {
+      const sheet = XLSX.utils.aoa_to_sheet([
+        ["", "LỊCH PHỎNG VẤN"],
+        ["", "STT", "THỜI GIAN", "HỌ TÊN", "MSSV", "GMAIL", "BAN"],
+        ["", 1, hour, "Ứng viên A", "HE123456", "a@example.com", dept],
+      ]);
+      XLSX.utils.book_append_sheet(workbook, sheet, `THỨ (${day})`);
+    }
+    const bytes = XLSX.write(workbook, { type: "array", bookType: "xlsx" }) as ArrayBuffer;
+    const result = await readInterviewSchedule(new File([bytes], "schedule.xlsx"), 2026);
+    expect(result.days).toEqual(["09/11/2026", "10/11/2026", "11/11/2026"]);
+    expect(result.rows.map((row) => row.shift)).toEqual([
+      "09/11/2026 18:30 (CM)", "10/11/2026 19:00 (ND)", "11/11/2026 20:00 (VH)",
+    ]);
   });
 });

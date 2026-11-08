@@ -43,7 +43,7 @@ export function WaitingDisplay({ initialCalls, initialSettings, initialTables }:
 
   return (
     <main className="min-h-dvh overflow-x-auto bg-[#101b19] text-[#f7f5ef]">
-      <div className="mx-auto flex min-h-dvh min-w-[1200px] flex-col px-[clamp(24px,3vw,64px)] py-[clamp(24px,3vh,48px)]">
+      <div className="mx-auto flex min-h-dvh min-w-[1440px] flex-col px-[clamp(24px,3vw,64px)] py-[clamp(24px,3vh,48px)]">
         <header className="flex items-end justify-between gap-8 border-b border-[#52605a] pb-7">
           <div>
             <p className="mb-2 text-sm font-semibold tracking-[0.3em] text-[#c9a67b] uppercase">CLB Casting</p>
@@ -59,7 +59,7 @@ export function WaitingDisplay({ initialCalls, initialSettings, initialTables }:
           </div>
         </header>
 
-        <div className="mt-8 grid flex-1 grid-cols-5 gap-[clamp(12px,1.2vw,24px)]">
+        <div className="mt-8 grid flex-1 grid-cols-6 gap-[clamp(12px,1.2vw,24px)]">
           {grouped.map(({ department, entries }) => (
             <section key={department.code} className="flex min-h-[540px] flex-col border-l border-[#52605a] pl-[clamp(12px,1.2vw,24px)] first:border-l-0 first:pl-0">
               <div className="h-40 shrink-0 border-b border-[#52605a] pb-5">

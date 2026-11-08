@@ -61,7 +61,7 @@ export function CandidatesManager({
     const nq = normalizeText(q);
     return cand.rows
       .filter((c) => (!statusF || c.status === statusF) && (!deptF || c.department === deptF) && (!sourceF || c.added_by_role === sourceF))
-      .filter((c) => !nq || normalizeText(`${c.code} ${c.student_number ?? ""} ${c.full_name} ${c.phone ?? ""} ${c.email ?? ""}`).includes(nq))
+      .filter((c) => !nq || normalizeText(`${c.code} ${c.student_number ?? ""} ${c.student_number_raw ?? ""} ${c.full_name} ${c.phone ?? ""} ${c.email ?? ""}`).includes(nq))
       .sort((a, b) => a.code.localeCompare(b.code, "vi", { numeric: true }));
   }, [cand.rows, q, statusF, deptF, sourceF]);
 
@@ -183,8 +183,8 @@ export function CandidatesManager({
               return (
                 <TableRow key={c.id}>
                   <TableCell className="font-mono text-xs">{c.code}</TableCell>
-                  <TableCell className="font-mono text-xs">{c.student_number || "—"}</TableCell>
-                  <TableCell className="font-medium">{c.full_name}</TableCell>
+                  <TableCell className="font-mono text-xs">{c.student_number || (c.student_number_raw ? <span className="text-amber-700" title="MSSV cần xác minh">{c.student_number_raw} ⚠</span> : "—")}</TableCell>
+                  <TableCell className="font-medium">{c.full_name}{c.source_candidate_id && <span className="ml-2 rounded bg-violet-100 px-1.5 py-0.5 text-xs text-violet-800">Lượt 2 từ CM</span>}</TableCell>
                   <TableCell>{GENDERS.find((gender) => gender.code === c.gender)?.name || "—"}</TableCell>
                   <TableCell>{c.student_cohort || "—"}</TableCell>
                   <TableCell className="tabular-nums">{c.phone}</TableCell>
@@ -213,7 +213,7 @@ export function CandidatesManager({
                       <Button size="icon-sm" variant="ghost" title="Sửa" aria-label="Sửa"
                         onClick={() => setEditing({
                           id: c.id,
-                          data: { code: c.code, full_name: c.full_name, student_number: c.student_number ?? "",
+                          data: { code: c.code, full_name: c.full_name, student_number: c.student_number ?? "", student_number_raw: c.student_number_raw,
                             student_cohort: c.student_cohort ?? "", gender: c.gender ?? "", facebook_url: c.facebook_url ?? "",
                             phone: c.phone ?? "", email: c.email ?? "", department: c.department ?? "", shift: c.shift ?? "", cv_url: c.cv_url ?? "" },
                         })}>
@@ -312,7 +312,7 @@ export function CandidatesManager({
                 </div>
                 <dl className="grid grid-cols-2 gap-2 text-xs">
                   <dt className="text-muted-foreground">Check-in</dt><dd>{formatDateTime(viewing.checked_in_at) || "—"}</dd>
-                  <dt className="text-muted-foreground">MSSV</dt><dd className="font-mono">{viewing.student_number || "—"}</dd>
+                  <dt className="text-muted-foreground">MSSV</dt><dd className="font-mono">{viewing.student_number || viewing.student_number_raw || "—"}{viewing.student_number_raw && " (cần xác minh)"}</dd>
                   <dt className="text-muted-foreground">Khóa · Giới tính</dt><dd>{[viewing.student_cohort, GENDERS.find((gender) => gender.code === viewing.gender)?.name].filter(Boolean).join(" · ") || "—"}</dd>
                   <dt className="text-muted-foreground">Email</dt><dd className="break-all">{viewing.email || "—"}</dd>
                   <dt className="text-muted-foreground">SĐT</dt><dd>{viewing.phone || "—"}</dd>
