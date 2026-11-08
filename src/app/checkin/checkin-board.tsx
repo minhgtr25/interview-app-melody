@@ -17,12 +17,13 @@ import { STATUS_LABEL, type Candidate, type CandidateStatus } from "@/lib/types"
 import { cn } from "@/lib/utils";
 import { DepartmentRadio } from "@/components/department-radio";
 import { type DepartmentCode } from "@/lib/departments";
+import { GENDERS, type GenderCode, normalizeStudentNumber } from "@/lib/personal-info";
 
 const NATIVE_SELECT =
   "h-10 rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50";
 
-type WalkInForm = { code: string; fullName: string; department: DepartmentCode | ""; phone: string; email: string; shift: string };
-const emptyWalkIn = (): WalkInForm => ({ code: "", fullName: "", department: "", phone: "", email: "", shift: "" });
+type WalkInForm = { code: string; fullName: string; studentNumber: string; studentCohort: string; gender: GenderCode | ""; facebookUrl: string; department: DepartmentCode | ""; phone: string; email: string };
+const emptyWalkIn = (): WalkInForm => ({ code: "", fullName: "", studentNumber: "", studentCohort: "", gender: "", facebookUrl: "", department: "", phone: "", email: "" });
 
 function haptic() {
   try {
@@ -69,6 +70,7 @@ export function CheckinBoard({
         return (
           normalizeText(c.full_name).includes(q) ||
           normalizeText(c.code).includes(q) ||
+          normalizeText(c.student_number ?? "").includes(q) ||
           (qDigits.length >= 3 && (c.phone ?? "").replace(/\D/g, "").includes(qDigits))
         );
       })
@@ -122,8 +124,8 @@ export function CheckinBoard({
   async function addWalkIn(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (addingWalkIn) return;
-    if (!walkIn.code.trim() || !walkIn.fullName.trim() || !walkIn.department) {
-      toast.error("Nhập mã, họ tên và chọn Ban ứng tuyển");
+    if (!walkIn.code.trim() || !walkIn.fullName.trim() || !walkIn.department || !walkIn.gender || !normalizeStudentNumber(walkIn.studentNumber)) {
+      toast.error("Nhập mã ứng viên, MSSV 8 ký tự, họ tên, Giới tính và Ban");
       return;
     }
     setAddingWalkIn(true);
@@ -133,13 +135,19 @@ export function CheckinBoard({
       p_department: walkIn.department,
       p_phone: walkIn.phone.trim() || null,
       p_email: walkIn.email.trim() || null,
-      p_shift: walkIn.shift.trim() || null,
+      p_shift: null,
+      p_student_number: normalizeStudentNumber(walkIn.studentNumber),
+      p_student_cohort: walkIn.studentCohort.trim() || null,
+      p_gender: walkIn.gender,
+      p_facebook_url: walkIn.facebookUrl.trim() || null,
     });
     setAddingWalkIn(false);
     if (error) {
-      toast.error(error.code === "23505" ? `Mã ứng viên "${walkIn.code.trim()}" đã tồn tại`
-        : error.code === "PGRST202" || error.code === "42703"
-          ? "Database chưa cài chức năng thêm thí sinh. Admin cần chạy migration 20261105_checkin_history.sql."
+      toast.error(error.code === "23505" ? error.message?.includes("student_number")
+        ? `MSSV "${walkIn.studentNumber.trim()}" đã thuộc thí sinh khác`
+        : `Mã ứng viên "${walkIn.code.trim()}" đã tồn tại`
+          : error.code === "PGRST202" || error.code === "42703"
+          ? "Database chưa cập nhật hồ sơ thí sinh. Admin cần chạy migration 20261108_candidate_personal_fields.sql."
           : errorMessage(error));
       return;
     }
@@ -208,7 +216,7 @@ export function CheckinBoard({
             <Input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Tìm theo tên, SĐT hoặc mã ứng viên…"
+              placeholder="Tìm tên, MSSV, SĐT hoặc mã ứng viên…"
               className="h-11 pl-9 text-base md:h-10 md:text-sm"
               type="search"
               enterKeyHint="search"
@@ -250,6 +258,7 @@ export function CheckinBoard({
             <TableHeader>
               <TableRow>
                 <TableHead className="w-28">Mã</TableHead>
+                <TableHead>MSSV</TableHead>
                 <TableHead>Họ tên</TableHead>
                 <TableHead>SĐT</TableHead>
                 <TableHead>Ban</TableHead>
@@ -265,6 +274,7 @@ export function CheckinBoard({
                   className={cn("transition-colors", flashId === c.id && "bg-emerald-50 dark:bg-emerald-950")}
                 >
                   <TableCell className="font-mono text-xs">{c.code}</TableCell>
+                  <TableCell className="font-mono text-xs">{c.student_number || "—"}</TableCell>
                   <TableCell className="font-medium">{c.full_name}</TableCell>
                   <TableCell className="tabular-nums">{c.phone}</TableCell>
                   <TableCell>{c.department}</TableCell>
@@ -298,7 +308,7 @@ export function CheckinBoard({
               ))}
               {filtered.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={7} className="py-10 text-center text-muted-foreground">
+                  <TableCell colSpan={8} className="py-10 text-center text-muted-foreground">
                     Không tìm thấy thí sinh phù hợp.
                   </TableCell>
                 </TableRow>
@@ -322,6 +332,7 @@ export function CheckinBoard({
                   <p className="truncate text-base font-semibold">{c.full_name}</p>
                   <p className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                     <span className="inline-flex items-center gap-1 font-mono"><Hash className="size-3" />{c.code}</span>
+                    {c.student_number && <span className="font-mono">MSSV {c.student_number}</span>}
                     {c.phone && (
                       <span className="inline-flex items-center gap-1 tabular-nums"><Phone className="size-3" />{c.phone}</span>
                     )}
@@ -360,6 +371,24 @@ export function CheckinBoard({
                   onChange={(event) => setWalkIn({ ...walkIn, fullName: event.target.value })} />
               </div>
               <div className="grid gap-1.5">
+                <Label htmlFor="walkin-student-number">MSSV *</Label>
+                <Input id="walkin-student-number" value={walkIn.studentNumber} maxLength={8} required disabled={addingWalkIn}
+                  onChange={(event) => setWalkIn({ ...walkIn, studentNumber: event.target.value })} />
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="walkin-cohort">Khóa sinh viên</Label>
+                <Input id="walkin-cohort" value={walkIn.studentCohort} maxLength={32} disabled={addingWalkIn}
+                  onChange={(event) => setWalkIn({ ...walkIn, studentCohort: event.target.value })} />
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="walkin-gender">Giới tính *</Label>
+                <select id="walkin-gender" className={NATIVE_SELECT} value={walkIn.gender} required disabled={addingWalkIn}
+                  onChange={(event) => setWalkIn({ ...walkIn, gender: event.target.value as GenderCode | "" })}>
+                  <option value="">Chọn giới tính</option>
+                  {GENDERS.map((gender) => <option key={gender.code} value={gender.code}>{gender.name}</option>)}
+                </select>
+              </div>
+              <div className="grid gap-1.5">
                 <Label htmlFor="walkin-phone">Số điện thoại</Label>
                 <Input id="walkin-phone" type="tel" value={walkIn.phone} maxLength={32} disabled={addingWalkIn}
                   onChange={(event) => setWalkIn({ ...walkIn, phone: event.target.value })} />
@@ -370,9 +399,9 @@ export function CheckinBoard({
                   onChange={(event) => setWalkIn({ ...walkIn, email: event.target.value })} />
               </div>
               <div className="grid gap-1.5 sm:col-span-2">
-                <Label htmlFor="walkin-shift">Ca phỏng vấn</Label>
-                <Input id="walkin-shift" value={walkIn.shift} maxLength={120} disabled={addingWalkIn}
-                  onChange={(event) => setWalkIn({ ...walkIn, shift: event.target.value })} />
+                <Label htmlFor="walkin-facebook">Link Facebook</Label>
+                <Input id="walkin-facebook" value={walkIn.facebookUrl} maxLength={2000} disabled={addingWalkIn}
+                  onChange={(event) => setWalkIn({ ...walkIn, facebookUrl: event.target.value })} />
               </div>
             </div>
             <div className="grid gap-1.5">

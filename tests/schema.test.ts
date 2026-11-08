@@ -3,9 +3,13 @@
  * một lớp giả lập tối thiểu của Supabase (schema auth, auth.uid(), các role,
  * publication realtime), rồi kiểm tra toàn bộ vòng đời thí sinh và RLS.
  */
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { beforeAll, describe, expect, it } from "vitest";
 import { PGlite } from "@electric-sql/pglite";
+
+// The SQL schema is intentionally local and excluded from the public code repository.
+// Clones without it can still run the application tests; local workspaces run the full suite.
+describe.skipIf(!existsSync(new URL("../supabase/schema.sql", import.meta.url)))("Private Supabase schema", () => {
 
 const SHIM = `
   create role anon nologin;
@@ -181,8 +185,9 @@ describe("RLS", () => {
     const [candidate] = await as<{
       id: string; code: string; status: string; checked_in_at: string;
       added_by_id: string; added_by_name: string; added_by_email: string; added_by_role: string;
-    }>(CHECKIN, "select * from public.add_walk_in_candidate($1,$2,$3,$4,$5,$6)",
-      ["BS01", "Thí sinh bổ sung", "CM", "0901234567", "bs@example.com", "Ca 2"]);
+    }>(CHECKIN, "select * from public.add_walk_in_candidate($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",
+      ["BS01", "Thí sinh bổ sung", "CM", "0901234567", "bs@example.com", null,
+        "HE123456", "K22", "NAM", "https://facebook.com/example"]);
     expect(candidate).toMatchObject({
       code: "BS01", status: "CHECKED_IN", added_by_id: CHECKIN,
       added_by_name: "Checkin", added_by_email: "c@x", added_by_role: "CHECKIN",
@@ -197,6 +202,24 @@ describe("RLS", () => {
     await expect(as(CHECKIN, "select * from public.add_walk_in_candidate('BS01','Trùng mã','CM')")).rejects.toThrow();
     await expect(as(CHECKIN, "select * from public.add_walk_in_candidate('BS02','Sai Ban','KHAC')")).rejects.toThrow(/Ban/);
     await expect(as(JUDGE, "select * from public.add_walk_in_candidate('BS03','Không có quyền','CM')")).rejects.toThrow(/quyền/);
+  });
+
+  it("import form theo MSSV là nguyên tử và giữ mã, trạng thái, Ca khi nhập lại", async () => {
+    const first = [{ student_number: "HE234567", full_name: "Thí sinh Form", student_cohort: "K22",
+      gender: "NU", phone: "0900000000", email: "form@example.com", facebook_url: null, department: "TT" }];
+    await expect(as(CHECKIN, "select public.import_form_candidates($1::jsonb)", [JSON.stringify(first)])).rejects.toThrow(/quyền/);
+    await as(ADMIN, "select public.import_form_candidates($1::jsonb)", [JSON.stringify(first)]);
+    const [before] = await superQuery<{ code: string }>("select code from public.candidates where student_number = 'HE234567'");
+    expect(before.code).toMatch(/^UV-[A-F0-9]{12}$/);
+    await superQuery("update public.candidates set status = 'CHECKED_IN', shift = 'Ca đã xác nhận' where student_number = 'HE234567'");
+    await as(ADMIN, "select public.import_form_candidates($1::jsonb)", [JSON.stringify([{ ...first[0], full_name: "Tên mới" }])]);
+    const [after] = await superQuery<{ code: string; status: string; shift: string; full_name: string }>(
+      "select code, status, shift, full_name from public.candidates where student_number = 'HE234567'");
+    expect(after).toEqual({ code: before.code, status: "CHECKED_IN", shift: "Ca đã xác nhận", full_name: "Tên mới" });
+    const invalid = [first[0], { ...first[0], student_number: "HE234568", email: "other@example.com" },
+      { ...first[0], student_number: "BAD", email: "bad@example.com" }];
+    await expect(as(ADMIN, "select public.import_form_candidates($1::jsonb)", [JSON.stringify(invalid)])).rejects.toThrow(/MSSV/);
+    expect((await superQuery("select id from public.candidates where student_number = 'HE234568'")).length).toBe(0);
   });
 
   it("người chưa có profile không đọc được gì", async () => {
@@ -480,4 +503,15 @@ describe("Vòng đời thí sinh", () => {
     expect((await superQuery("select id from public.review_decisions where candidate_id = $1", [candidate.id])).length).toBe(0);
     expect((await superQuery("select id from public.review_decision_events where candidate_id = $1", [candidate.id])).length).toBe(2);
   });
+
+  it("migration hồ sơ cá nhân chạy lại được sau các migration cũ", async () => {
+    const migration = readFileSync(new URL("../supabase/migrations/20261108_candidate_personal_fields.sql", import.meta.url), "utf8");
+    await db.exec(migration);
+    await db.exec(migration);
+    const [candidate] = await superQuery<{ student_number: string; gender: string }>(
+      "select student_number, gender from public.candidates where code = 'BS01'");
+    expect(candidate).toEqual({ student_number: "HE123456", gender: "NAM" });
+  });
+});
+
 });

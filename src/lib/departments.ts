@@ -18,6 +18,8 @@ export function normalizeDepartment(value: string | null | undefined): Departmen
   const aliases: Record<string, DepartmentCode> = {
     "CHUYÊN MÔN": "CM", "VĂN HÓA": "VH", "TRUYỀN THÔNG": "TT",
     DESIGN: "DE", "HẬU CẦN - THIẾT CÔNG": "HCTC",
+    "BAN CHUYÊN MÔN": "CM", "BAN VĂN HÓA": "VH", "BAN TRUYỀN THÔNG": "TT",
+    "BAN HẬU CẦN - THIẾT CÔNG": "HCTC", "BAN NỘI DUNG": "TT",
   };
   return aliases[normalized] ?? null;
 }

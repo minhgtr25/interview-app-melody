@@ -42,16 +42,18 @@ export function ImportDialog({ onDone }: { onDone: () => void }) {
   }
 
   const result = sheet ? applyMapping(sheet, mapping) : null;
-  const hasRequired = mapping.includes("code") && mapping.includes("full_name") && mapping.includes("department");
+  const hasRequired = mapping.includes("student_number") && mapping.includes("full_name") && mapping.includes("gender") && mapping.includes("department");
   const canImport = hasRequired && !!result?.valid.length && result.errors.length === 0 && result.duplicates.length === 0;
+  const mappedColumns = mapping.flatMap((field, index) => field ? [{ field, index }] : []);
 
   async function submit() {
     if (!result || !canImport) return;
     setBusy(true);
     const res = await importCandidates(
       result.valid.map((v) => ({
-        code: v.code!, full_name: v.full_name!, phone: v.phone, email: v.email,
-        department: v.department, shift: v.shift, cv_url: v.cv_url,
+        student_number: v.student_number!, full_name: v.full_name!, student_cohort: v.student_cohort,
+        gender: v.gender!, phone: v.phone, email: v.email, facebook_url: v.facebook_url,
+        department: v.department!,
       }))
     );
     setBusy(false);
@@ -72,8 +74,8 @@ export function ImportDialog({ onDone }: { onDone: () => void }) {
           <DialogHeader>
             <DialogTitle>Import danh sách thí sinh</DialogTitle>
             <DialogDescription>
-              Hỗ trợ .xlsx, .xls, .csv. Hệ thống tự nhận diện cột, bạn có thể chỉnh lại. Mã ứng viên phải ổn định và
-              duy nhất; khi import lại, hồ sơ trùng mã được cập nhật và giữ nguyên trạng thái hiện tại.
+              Hỗ trợ .xlsx, .xls, .csv từ Google Form. Chỉ lấy thông tin cá nhân và Ban; bỏ qua Ca cùng các câu trả lời chuyên môn.
+              Hệ thống tạo mã ứng viên riêng, dùng MSSV để nhận diện khi import lại và giữ nguyên trạng thái hiện tại.
             </DialogDescription>
           </DialogHeader>
 
@@ -104,37 +106,19 @@ export function ImportDialog({ onDone }: { onDone: () => void }) {
               <p className="text-sm">
                 <b>{fileName}</b> · sheet “{sheet.sheetName}” · {sheet.rows.length} dòng
               </p>
+              <p className="text-xs text-muted-foreground">Xem trước chỉ hiện các cột đã chọn nhập. Các câu trả lời khác không được gửi vào database.</p>
               <div className="overflow-x-auto rounded-lg border">
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      {sheet.headers.map((h, i) => (
-                        <TableHead key={i} className="min-w-36 align-top">
-                          <div className="py-2">
-                            <p className="mb-1 truncate text-xs font-normal text-muted-foreground" title={h}>
-                              Cột: {h || `(trống ${i + 1})`}
-                            </p>
-                            <select
-                              className={SELECT_CLS}
-                              value={mapping[i] ?? ""}
-                              onChange={(e) => setField(i, (e.target.value || null) as CandidateField | null)}
-                              aria-label={`Map cột ${h}`}
-                            >
-                              <option value="">— Bỏ qua —</option>
-                              {FIELDS.map((f) => (
-                                <option key={f} value={f}>{FIELD_LABEL[f]}</option>
-                              ))}
-                            </select>
-                          </div>
-                        </TableHead>
-                      ))}
+                      {mappedColumns.map(({ field, index }) => <TableHead key={index} className="min-w-36">{FIELD_LABEL[field]}</TableHead>)}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {sheet.rows.slice(0, 5).map((r, ri) => (
                       <TableRow key={ri}>
-                        {sheet.headers.map((_, ci) => (
-                          <TableCell key={ci} className="max-w-48 truncate text-xs">{String(r[ci] ?? "")}</TableCell>
+                        {mappedColumns.map(({ index }) => (
+                          <TableCell key={index} className="max-w-48 truncate text-xs">{String(r[index] ?? "")}</TableCell>
                         ))}
                       </TableRow>
                     ))}
@@ -142,20 +126,37 @@ export function ImportDialog({ onDone }: { onDone: () => void }) {
                 </Table>
               </div>
 
+              <div className="overflow-x-auto rounded-lg border">
+                <Table>
+                  <TableHeader><TableRow>
+                    {sheet.headers.map((h, i) => <TableHead key={i} className="min-w-36 align-top">
+                      <div className="py-2">
+                        <p className="mb-1 truncate text-xs font-normal text-muted-foreground" title={h}>Cột: {h || `(trống ${i + 1})`}</p>
+                        <select className={SELECT_CLS} value={mapping[i] ?? ""}
+                          onChange={(e) => setField(i, (e.target.value || null) as CandidateField | null)} aria-label={`Map cột ${h}`}>
+                          <option value="">— Bỏ qua —</option>
+                          {FIELDS.map((field) => <option key={field} value={field}>{FIELD_LABEL[field]}</option>)}
+                        </select>
+                      </div>
+                    </TableHead>)}
+                  </TableRow></TableHeader>
+                </Table>
+              </div>
+
               {!hasRequired && (
                 <p className="flex items-center gap-2 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-200">
-                  <AlertTriangle className="size-4" /> Bắt buộc map cột “Mã ứng viên”, “Họ tên” và “Ban ứng tuyển”. Cột STT không được tự nhận làm mã ứng viên.
+                  <AlertTriangle className="size-4" /> Bắt buộc map “MSSV”, “Họ tên”, “Giới tính” và “Ban ứng tuyển”.
                 </p>
               )}
               {result && hasRequired && (
                 <div className="grid gap-2 text-sm">
                   <p>
                     Hợp lệ: <b className="text-emerald-700 dark:text-emerald-400">{result.valid.length}</b>
-                    {result.errors.length > 0 && <> · Lỗi: <b className="text-red-600">{result.errors.length}</b> (sẽ bỏ qua)</>}
+                    {result.errors.length > 0 && <> · Lỗi: <b className="text-red-600">{result.errors.length}</b> (chặn import)</>}
                   </p>
                   {result.duplicates.length > 0 && (
                     <p className="text-amber-700 dark:text-amber-300">
-                      Mã bị trùng trong file (cần sửa trước khi import): {result.duplicates.slice(0, 10).join(", ")}
+                      MSSV bị trùng trong file (cần sửa trước khi import): {result.duplicates.slice(0, 10).join(", ")}
                       {result.duplicates.length > 10 && "…"}
                     </p>
                   )}

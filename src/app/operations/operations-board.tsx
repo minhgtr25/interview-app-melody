@@ -55,7 +55,7 @@ export function OperationsBoard({ role, staffName, initialCandidates, initialEva
   const visibleCandidates = useMemo(() => candidates.rows.filter((candidate) => {
     if (department && candidate.department !== department) return false;
     if (candidateStatus && candidate.status !== candidateStatus) return false;
-    return !search || normalizeText(`${candidate.code} ${candidate.full_name} ${candidate.phone ?? ""} ${candidate.email ?? ""}`).includes(search);
+    return !search || normalizeText(`${candidate.code} ${candidate.student_number ?? ""} ${candidate.full_name} ${candidate.phone ?? ""} ${candidate.email ?? ""}`).includes(search);
   }).sort((a, b) => a.code.localeCompare(b.code, "vi", { numeric: true })), [candidates.rows, department, candidateStatus, search]);
 
   const visibleRooms = useMemo(() => rooms.rows.map((room) => ({
@@ -99,7 +99,7 @@ export function OperationsBoard({ role, staffName, initialCandidates, initialEva
           <div className="relative min-w-60 flex-1">
             <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input type="search" value={query} onChange={(event) => setQuery(event.target.value)} className="pl-9"
-              placeholder={view === "candidates" ? "Tìm tên, mã, SĐT, email…" : "Tìm phòng, bàn hoặc thí sinh đã phỏng vấn…"} />
+              placeholder={view === "candidates" ? "Tìm tên, mã, MSSV, SĐT, email…" : "Tìm phòng, bàn hoặc thí sinh đã phỏng vấn…"} />
           </div>
           {view === "candidates" && <select className="h-9 rounded-md border bg-background px-3 text-sm" value={candidateStatus}
             onChange={(event) => setCandidateStatus(event.target.value as CandidateStatus | "")} aria-label="Lọc trạng thái">
@@ -113,7 +113,7 @@ export function OperationsBoard({ role, staffName, initialCandidates, initialEva
       {view === "candidates" ? <div className="overflow-x-auto rounded-xl border bg-card">
         <Table>
           <TableHeader><TableRow>
-            <TableHead>Mã</TableHead><TableHead>Họ tên</TableHead><TableHead>SĐT</TableHead>
+            <TableHead>Mã</TableHead><TableHead>MSSV</TableHead><TableHead>Họ tên</TableHead><TableHead>SĐT</TableHead>
             <TableHead>Ban</TableHead><TableHead>Ca</TableHead><TableHead>Trạng thái</TableHead>
             <TableHead>Phòng - Bàn đã thi</TableHead><TableHead>Người bổ sung</TableHead>
             <TableHead className="text-right">Điểm TB</TableHead><TableHead className="text-right">Chi tiết</TableHead>
@@ -123,6 +123,7 @@ export function OperationsBoard({ role, staffName, initialCandidates, initialEva
               const evaluation = evaluationByCandidate.get(candidate.id);
               return <TableRow key={candidate.id} className="cursor-pointer hover:bg-muted/40" onClick={() => setSelectedCandidateId(candidate.id)}>
                 <TableCell className="font-mono text-xs">{candidate.code}</TableCell>
+                <TableCell className="font-mono text-xs">{candidate.student_number || "—"}</TableCell>
                 <TableCell className="font-medium">{candidate.full_name}</TableCell>
                 <TableCell>{candidate.phone || "—"}</TableCell>
                 <TableCell>{candidate.department || "—"}</TableCell>
@@ -134,7 +135,7 @@ export function OperationsBoard({ role, staffName, initialCandidates, initialEva
                 <TableCell className="text-right"><Button size="xs" variant="outline" onClick={(event) => { event.stopPropagation(); setSelectedCandidateId(candidate.id); }}>Xem</Button></TableCell>
               </TableRow>;
             })}
-            {visibleCandidates.length === 0 && <TableRow><TableCell colSpan={10} className="py-12 text-center text-muted-foreground">Không tìm thấy thí sinh.</TableCell></TableRow>}
+            {visibleCandidates.length === 0 && <TableRow><TableCell colSpan={11} className="py-12 text-center text-muted-foreground">Không tìm thấy thí sinh.</TableCell></TableRow>}
           </TableBody>
         </Table>
       </div> : <div className="space-y-5">
@@ -192,8 +193,11 @@ export function OperationsBoard({ role, staffName, initialCandidates, initialEva
           <div className="space-y-4 text-sm">
             <StatusBadge status={selectedCandidate.status} />
             <dl className="grid grid-cols-2 gap-x-3 gap-y-2">
+              <dt className="text-muted-foreground">MSSV</dt><dd className="font-mono">{selectedCandidate.student_number || "—"}</dd>
+              <dt className="text-muted-foreground">Khóa · Giới tính</dt><dd>{[selectedCandidate.student_cohort, selectedCandidate.gender === "NAM" ? "Nam" : selectedCandidate.gender === "NU" ? "Nữ" : selectedCandidate.gender === "KHAC" ? "Khác" : null].filter(Boolean).join(" · ") || "—"}</dd>
               <dt className="text-muted-foreground">Số điện thoại</dt><dd>{selectedCandidate.phone || "—"}</dd>
               <dt className="text-muted-foreground">Email</dt><dd className="break-all">{selectedCandidate.email || "—"}</dd>
+              <dt className="text-muted-foreground">Facebook</dt><dd>{safeUrl(selectedCandidate.facebook_url) ? <a href={safeUrl(selectedCandidate.facebook_url)!} target="_blank" rel="noopener noreferrer" className="text-primary underline">Mở hồ sơ</a> : selectedCandidate.facebook_url || "—"}</dd>
               <dt className="text-muted-foreground">Check-in</dt><dd>{formatDateTime(selectedCandidate.checked_in_at) || "—"}</dd>
               <dt className="text-muted-foreground">Người bổ sung</dt><dd>{selectedCandidate.added_by_name || "—"}</dd>
               <dt className="text-muted-foreground">Phòng - Bàn</dt><dd>{selectedEvaluation?.table_label || "—"}</dd>

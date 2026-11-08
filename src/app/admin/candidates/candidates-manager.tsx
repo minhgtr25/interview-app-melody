@@ -24,9 +24,10 @@ import { deleteAllCandidates, deleteCandidate, saveCandidate, type CandidateInpu
 import { ImportDialog } from "./import-dialog";
 import { DepartmentRadio } from "@/components/department-radio";
 import { type DepartmentCode, isDepartmentCode } from "@/lib/departments";
+import { GENDERS } from "@/lib/personal-info";
 
 const SELECT_CLS = "h-9 rounded-lg border border-input bg-background px-3 text-sm";
-const EMPTY: CandidateInput = { code: "", full_name: "", phone: "", email: "", department: "", shift: "", cv_url: "" };
+const EMPTY: CandidateInput = { code: "", full_name: "", student_number: "", student_cohort: "", gender: "", facebook_url: "", phone: "", email: "", department: "", shift: "", cv_url: "" };
 
 type Confirm =
   | { kind: "reset" | "delete"; c: Candidate }
@@ -60,7 +61,7 @@ export function CandidatesManager({
     const nq = normalizeText(q);
     return cand.rows
       .filter((c) => (!statusF || c.status === statusF) && (!deptF || c.department === deptF) && (!sourceF || c.added_by_role === sourceF))
-      .filter((c) => !nq || normalizeText(`${c.code} ${c.full_name} ${c.phone ?? ""} ${c.email ?? ""}`).includes(nq))
+      .filter((c) => !nq || normalizeText(`${c.code} ${c.student_number ?? ""} ${c.full_name} ${c.phone ?? ""} ${c.email ?? ""}`).includes(nq))
       .sort((a, b) => a.code.localeCompare(b.code, "vi", { numeric: true }));
   }, [cand.rows, q, statusF, deptF, sourceF]);
 
@@ -144,7 +145,7 @@ export function CandidatesManager({
       <div className="flex flex-col gap-2 md:flex-row">
         <div className="relative flex-1">
           <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Tìm mã, tên, SĐT, email…" className="h-9 pl-9" />
+          <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Tìm mã ứng viên, MSSV, tên, SĐT, email…" className="h-9 pl-9" />
         </div>
         <select className={SELECT_CLS} value={statusF} onChange={(e) => setStatusF(e.target.value as CandidateStatus | "")} aria-label="Lọc trạng thái">
           <option value="">Mọi trạng thái</option>
@@ -162,7 +163,10 @@ export function CandidatesManager({
           <TableHeader>
             <TableRow>
               <TableHead>Mã</TableHead>
+              <TableHead>MSSV</TableHead>
               <TableHead>Họ tên</TableHead>
+              <TableHead>Giới tính</TableHead>
+              <TableHead>Khóa</TableHead>
               <TableHead>SĐT</TableHead>
               <TableHead>Ban</TableHead>
               <TableHead>Ca</TableHead>
@@ -179,7 +183,10 @@ export function CandidatesManager({
               return (
                 <TableRow key={c.id}>
                   <TableCell className="font-mono text-xs">{c.code}</TableCell>
+                  <TableCell className="font-mono text-xs">{c.student_number || "—"}</TableCell>
                   <TableCell className="font-medium">{c.full_name}</TableCell>
+                  <TableCell>{GENDERS.find((gender) => gender.code === c.gender)?.name || "—"}</TableCell>
+                  <TableCell>{c.student_cohort || "—"}</TableCell>
                   <TableCell className="tabular-nums">{c.phone}</TableCell>
                   <TableCell>{c.department}</TableCell>
                   <TableCell className="max-w-40 truncate">{c.shift}</TableCell>
@@ -206,8 +213,9 @@ export function CandidatesManager({
                       <Button size="icon-sm" variant="ghost" title="Sửa" aria-label="Sửa"
                         onClick={() => setEditing({
                           id: c.id,
-                          data: { code: c.code, full_name: c.full_name, phone: c.phone ?? "", email: c.email ?? "",
-                            department: c.department ?? "", shift: c.shift ?? "", cv_url: c.cv_url ?? "" },
+                          data: { code: c.code, full_name: c.full_name, student_number: c.student_number ?? "",
+                            student_cohort: c.student_cohort ?? "", gender: c.gender ?? "", facebook_url: c.facebook_url ?? "",
+                            phone: c.phone ?? "", email: c.email ?? "", department: c.department ?? "", shift: c.shift ?? "", cv_url: c.cv_url ?? "" },
                         })}>
                         <Pencil />
                       </Button>
@@ -226,7 +234,7 @@ export function CandidatesManager({
             })}
             {filtered.length === 0 && (
               <TableRow>
-                  <TableCell colSpan={10} className="py-10 text-center text-muted-foreground">
+                  <TableCell colSpan={13} className="py-10 text-center text-muted-foreground">
                   {cand.rows.length ? "Không có thí sinh phù hợp bộ lọc." : "Chưa có thí sinh. Bấm “Import Excel” để nhập danh sách."}
                 </TableCell>
               </TableRow>
@@ -250,15 +258,24 @@ export function CandidatesManager({
           {editing && (
             <div className="grid gap-3 sm:grid-cols-2">
               {([
-                ["code", "Mã ứng viên *"], ["full_name", "Họ tên *"], ["phone", "SĐT"], ["email", "Email"],
-                ["shift", "Ca phỏng vấn"], ["cv_url", "Link CV"],
+                ["code", "Mã ứng viên *"], ["student_number", "MSSV"], ["full_name", "Họ tên *"],
+                ["student_cohort", "Khóa sinh viên"], ["phone", "SĐT"], ["email", "Email"],
+                ["facebook_url", "Link Facebook"], ["shift", "Ca phỏng vấn"], ["cv_url", "Link CV"],
               ] as [keyof CandidateInput, string][]).map(([k, label]) => (
-                <div key={k} className={k === "cv_url" ? "grid gap-1.5 sm:col-span-2" : "grid gap-1.5"}>
+                <div key={k} className={k === "cv_url" || k === "facebook_url" ? "grid gap-1.5 sm:col-span-2" : "grid gap-1.5"}>
                   <Label htmlFor={`f-${k}`}>{label}</Label>
                   <Input id={`f-${k}`} value={editing.data[k] ?? ""}
                     onChange={(e) => setEditing({ ...editing, data: { ...editing.data, [k]: e.target.value } })} />
                 </div>
               ))}
+              <div className="grid gap-1.5">
+                <Label htmlFor="candidate-gender">Giới tính</Label>
+                <select id="candidate-gender" className={SELECT_CLS} value={editing.data.gender ?? ""}
+                  onChange={(event) => setEditing({ ...editing, data: { ...editing.data, gender: event.target.value } })}>
+                  <option value="">Chưa chọn</option>
+                  {GENDERS.map((gender) => <option key={gender.code} value={gender.code}>{gender.name}</option>)}
+                </select>
+              </div>
               <div className="grid gap-1.5 sm:col-span-2">
                 <Label>Ban ứng tuyển</Label>
                 <DepartmentRadio name="candidate-department" value={isDepartmentCode(editing.data.department) ? editing.data.department : ""}
@@ -295,6 +312,11 @@ export function CandidatesManager({
                 </div>
                 <dl className="grid grid-cols-2 gap-2 text-xs">
                   <dt className="text-muted-foreground">Check-in</dt><dd>{formatDateTime(viewing.checked_in_at) || "—"}</dd>
+                  <dt className="text-muted-foreground">MSSV</dt><dd className="font-mono">{viewing.student_number || "—"}</dd>
+                  <dt className="text-muted-foreground">Khóa · Giới tính</dt><dd>{[viewing.student_cohort, GENDERS.find((gender) => gender.code === viewing.gender)?.name].filter(Boolean).join(" · ") || "—"}</dd>
+                  <dt className="text-muted-foreground">Email</dt><dd className="break-all">{viewing.email || "—"}</dd>
+                  <dt className="text-muted-foreground">SĐT</dt><dd>{viewing.phone || "—"}</dd>
+                  <dt className="text-muted-foreground">Facebook</dt><dd>{safeUrl(viewing.facebook_url) ? <a href={safeUrl(viewing.facebook_url)!} target="_blank" rel="noopener noreferrer" className="break-all text-primary underline">Mở hồ sơ</a> : viewing.facebook_url || "—"}</dd>
                   <dt className="text-muted-foreground">Người bổ sung</dt><dd>{viewing.added_by_name ? `${viewing.added_by_name} (${viewing.added_by_email ?? ROLE_LABEL[viewing.added_by_role ?? "CHECKIN"]})` : "Không ghi nhận"}</dd>
                   {viewing.added_by_name && <><dt className="text-muted-foreground">Thêm lúc</dt><dd>{formatDateTime(viewing.created_at)}</dd></>}
                   <dt className="text-muted-foreground">Bắt đầu PV</dt><dd>{formatDateTime(viewEval?.started_at ?? viewing.interview_started_at) || "—"}</dd>

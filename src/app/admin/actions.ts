@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { createClient, createServiceClient, getSessionProfile } from "@/lib/supabase/server";
 import type { UserRole } from "@/lib/types";
 import { normalizeDepartment } from "@/lib/departments";
+import { normalizeGender, normalizeStudentNumber } from "@/lib/personal-info";
 
 export type ActionResult<T = undefined> = { ok: true; data?: T } | { ok: false; error: string };
 
@@ -180,6 +181,10 @@ export async function deleteAccount(id: string): Promise<ActionResult> {
 export type CandidateInput = {
   code: string;
   full_name: string;
+  student_number: string | null;
+  student_cohort: string | null;
+  gender: string | null;
+  facebook_url: string | null;
   phone: string | null;
   email: string | null;
   department: string | null;
@@ -199,9 +204,19 @@ function cleanCandidate(c: CandidateInput): CandidateInput {
   const department = t(c.department, 120);
   const normalizedDepartment = normalizeDepartment(department);
   if (!normalizedDepartment) throw new Error(`Ban không hợp lệ (mã ${code}). Chọn CM, VH, TT, DE hoặc HCTC`);
+  const rawStudentNumber = t(c.student_number, 32);
+  const studentNumber = rawStudentNumber ? normalizeStudentNumber(rawStudentNumber) : null;
+  if (rawStudentNumber && !studentNumber) throw new Error(`MSSV phải gồm đúng 8 chữ hoặc số (mã ${code})`);
+  const rawGender = t(c.gender, 20);
+  const gender = rawGender ? normalizeGender(rawGender) : null;
+  if (rawGender && !gender) throw new Error(`Giới tính không hợp lệ (mã ${code})`);
   return {
     code,
     full_name: name,
+    student_number: studentNumber,
+    student_cohort: t(c.student_cohort, 32),
+    gender,
+    facebook_url: t(c.facebook_url, 2000),
     phone: t(c.phone, 32),
     email: t(c.email, 200)?.toLowerCase() ?? null,
     department: normalizedDepartment,
@@ -210,32 +225,56 @@ function cleanCandidate(c: CandidateInput): CandidateInput {
   };
 }
 
-/**
- * Import theo lô: upsert theo `code`. Chỉ cập nhật thông tin hồ sơ, KHÔNG đụng
- * tới trạng thái, nên import lại giữa buổi không làm mất tiến độ.
- */
-export async function importCandidates(rows: CandidateInput[]): Promise<ActionResult<{ count: number }>> {
+export type FormCandidateInput = {
+  full_name: string;
+  student_number: string;
+  student_cohort: string | null;
+  gender: string;
+  phone: string | null;
+  email: string | null;
+  facebook_url: string | null;
+  department: string;
+};
+
+/** Ghi toàn bộ file trong một transaction qua RPC; nhập lại theo MSSV. */
+export async function importCandidates(rows: FormCandidateInput[]): Promise<ActionResult<{ count: number }>> {
   try {
     await assertAdmin();
     if (!Array.isArray(rows) || rows.length === 0) throw new Error("File không có dòng dữ liệu nào");
     if (rows.length > 5000) throw new Error("Tối đa 5000 thí sinh mỗi lần import");
-
-    const map = new Map<string, CandidateInput>();
-    for (const r of rows) {
-      const c = cleanCandidate(r);
-      map.set(c.code, c); // mã trùng trong file: dòng sau ghi đè dòng trước
-    }
-    const clean = [...map.values()];
-
+    const seen = new Set<string>();
+    const clean = rows.map((row) => {
+      const studentNumber = normalizeStudentNumber(row.student_number);
+      const gender = normalizeGender(row.gender);
+      const department = normalizeDepartment(row.department);
+      const name = row.full_name?.trim();
+      if (!studentNumber) throw new Error("MSSV phải gồm đúng 8 chữ hoặc số");
+      if (seen.has(studentNumber)) throw new Error(`MSSV trùng trong file: ${studentNumber}`);
+      seen.add(studentNumber);
+      if (!name || name.length > 200) throw new Error(`Họ tên không hợp lệ (MSSV ${studentNumber})`);
+      if (!gender) throw new Error(`Giới tính không hợp lệ (MSSV ${studentNumber})`);
+      if (!department) throw new Error(`Ban không hợp lệ (MSSV ${studentNumber})`);
+      return {
+        student_number: studentNumber,
+        full_name: name,
+        student_cohort: row.student_cohort?.trim() || null,
+        gender,
+        phone: row.phone?.trim() || null,
+        email: row.email?.trim().toLowerCase() || null,
+        facebook_url: row.facebook_url?.trim() || null,
+        department,
+      };
+    });
     const supabase = await createClient();
-    for (let i = 0; i < clean.length; i += 500) {
-      const { error } = await supabase
-        .from("candidates")
-        .upsert(clean.slice(i, i + 500), { onConflict: "code" });
-      if (error) throw error;
+    const { data, error } = await supabase.rpc("import_form_candidates", { p_rows: clean });
+    if (error) {
+      if (error.code === "PGRST202" || error.code === "42703") {
+        throw new Error("Database chưa cập nhật. Chạy migration 20261108_candidate_personal_fields.sql trước khi import.");
+      }
+      throw error;
     }
     revalidatePath("/admin");
-    return { ok: true, data: { count: clean.length } };
+    return { ok: true, data: { count: Number(data ?? 0) } };
   } catch (e) {
     return fail(e);
   }
@@ -250,7 +289,9 @@ export async function saveCandidate(id: string | null, input: CandidateInput): P
       ? await supabase.from("candidates").update(c).eq("id", id)
       : await supabase.from("candidates").insert(c);
     if (error) {
-      if (error.code === "23505") throw new Error(`Mã ứng viên "${c.code}" đã tồn tại`);
+      if (error.code === "23505") throw new Error(error.message?.includes("student_number")
+        ? `MSSV "${c.student_number}" đã thuộc thí sinh khác`
+        : `Mã ứng viên "${c.code}" đã tồn tại`);
       throw error;
     }
     return { ok: true };

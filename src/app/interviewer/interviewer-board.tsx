@@ -374,7 +374,7 @@ export function InterviewerBoard({
             <BellRing className="mx-auto mb-3 size-10 animate-bounce text-amber-600" />
             <p className="text-sm font-medium text-amber-800 dark:text-amber-200">Thí sinh được gán vào bàn</p>
             <p className="mt-2 text-2xl font-bold">{candidate.full_name}</p>
-            <p className="mt-1 font-mono text-sm text-muted-foreground">{candidate.code}</p>
+            <p className="mt-1 font-mono text-sm text-muted-foreground">{candidate.code}{candidate.student_number && ` · MSSV ${candidate.student_number}`}</p>
             <p className="mt-1 text-sm text-muted-foreground">{[candidate.department, candidate.shift].filter(Boolean).join(" · ")}</p>
             <p className="mt-3 text-xs text-muted-foreground">
               Đã gán <Elapsed since={table.assigned_at} /> trước
@@ -405,7 +405,7 @@ export function InterviewerBoard({
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="text-xl font-bold">{candidate.full_name}</p>
-                  <p className="font-mono text-sm text-muted-foreground">{candidate.code}</p>
+                  <p className="font-mono text-sm text-muted-foreground">{candidate.code}{candidate.student_number && ` · MSSV ${candidate.student_number}`}</p>
                 </div>
                 {cvUrl ? (
                   <a

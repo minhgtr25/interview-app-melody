@@ -168,7 +168,7 @@ export function CoordinatorBoard({
     () =>
       cand.rows
         .filter((c) => c.status === "CHECKED_IN" && (!queueDepartment || c.department === queueDepartment)
-          && (!deferredQueueSearch || normalizeText(`${c.full_name} ${c.code} ${c.phone ?? ""}`).includes(deferredQueueSearch)))
+          && (!deferredQueueSearch || normalizeText(`${c.full_name} ${c.code} ${c.student_number ?? ""} ${c.phone ?? ""}`).includes(deferredQueueSearch)))
         .sort((a, b) => (a.checked_in_at ?? "").localeCompare(b.checked_in_at ?? "")),
     [cand.rows, queueDepartment, deferredQueueSearch]
   );
@@ -294,6 +294,7 @@ export function CoordinatorBoard({
                 <p className="truncate font-medium">{c.full_name}</p>
                 <p className="truncate text-xs text-muted-foreground">
                   <span className="font-mono">{c.code}</span>
+                  {c.student_number && <span className="font-mono"> · MSSV {c.student_number}</span>}
                   {c.department && ` · ${c.department}`}
                 </p>
               </div>

@@ -1,6 +1,7 @@
 import * as XLSX from "xlsx";
 import { normalizeDepartment } from "@/lib/departments";
-import { formatDateTime, formatDuration, normalizePhone, normalizeText } from "@/lib/format";
+import { formatDateTime, formatDuration, normalizePhone, normalizeText, safeUrl } from "@/lib/format";
+import { GENDERS, normalizeGender, normalizeStudentNumber } from "@/lib/personal-info";
 import {
   STATUS_LABEL,
   type Candidate,
@@ -8,27 +9,29 @@ import {
   type RubricCriterion,
 } from "@/lib/types";
 
-export type CandidateField = "code" | "full_name" | "phone" | "email" | "department" | "shift" | "cv_url";
+export type CandidateField = "full_name" | "student_number" | "student_cohort" | "gender" | "phone" | "email" | "facebook_url" | "department";
 
 export const FIELD_LABEL: Record<CandidateField, string> = {
-  code: "Mã ứng viên",
   full_name: "Họ tên",
+  student_number: "Mã số sinh viên",
+  student_cohort: "Khóa sinh viên",
+  gender: "Giới tính",
   phone: "SĐT",
   email: "Email",
+  facebook_url: "Link Facebook",
   department: "Ban ứng tuyển",
-  shift: "Ca phỏng vấn",
-  cv_url: "Link CV",
 };
 
 /** Các tên cột thường gặp (đã bỏ dấu, lowercase) để tự động map. */
 const ALIASES: Record<CandidateField, string[]> = {
-  code: ["ma ung vien", "ma uv", "ma thi sinh", "ma ts", "ma so", "ma", "id", "code", "candidate id", "sbd", "so bao danh"],
   full_name: ["ho ten", "ho va ten", "ten", "ten ung vien", "ten thi sinh", "full name", "name", "fullname"],
+  student_number: ["ma so sinh vien", "mssv", "student number", "student id"],
+  student_cohort: ["sinh vien khoa", "khoa sinh vien", "khoa", "cohort"],
+  gender: ["gioi tinh", "gender"],
   phone: ["sdt", "so dien thoai", "dien thoai", "phone", "phone number", "dt", "mobile"],
   email: ["email", "e-mail", "mail", "gmail", "dia chi email"],
-  department: ["ban ung tuyen", "ban", "ban dang ky", "nguyen vong", "bo phan", "department", "team", "vi tri"],
-  shift: ["ca phong van", "ca", "ca pv", "khung gio", "shift", "slot", "gio phong van"],
-  cv_url: ["link cv", "cv", "link", "cv url", "portfolio", "link portfolio", "ho so", "url"],
+  facebook_url: ["link facebook", "facebook", "fb url"],
+  department: ["ban dang ky ban nao", "ban ung tuyen", "ban dang ky", "department", "team"],
 };
 
 /** Trả về field phù hợp cho từng header (null nếu không nhận ra). Ưu tiên khớp chính xác, rồi khớp chứa. */
@@ -82,7 +85,7 @@ export function applyMapping(sheet: ParsedSheet, mapping: (CandidateField | null
   const valid: MappedCandidate[] = [];
   const errors: { row: number; message: string }[] = [];
   sheet.rows.forEach((r, i) => {
-    const rec: MappedCandidate = { code: null, full_name: null, phone: null, email: null, department: null, shift: null, cv_url: null };
+    const rec: MappedCandidate = { full_name: null, student_number: null, student_cohort: null, gender: null, phone: null, email: null, facebook_url: null, department: null };
     mapping.forEach((field, col) => {
       if (!field) return;
       const v = String(r[col] ?? "").trim();
@@ -90,28 +93,35 @@ export function applyMapping(sheet: ParsedSheet, mapping: (CandidateField | null
     });
     rec.phone = normalizePhone(rec.phone);
     const rowNo = i + 2; // +1 header, +1 đánh số từ 1
-    if (!rec.code && !rec.full_name && !rec.department && !rec.phone && !rec.email) return;
-    if (!rec.code) return errors.push({ row: rowNo, message: "Thiếu mã ứng viên" });
+    if (!rec.full_name && !rec.student_number && !rec.department && !rec.phone && !rec.email) return;
     if (!rec.full_name) return errors.push({ row: rowNo, message: "Thiếu họ tên" });
+    const studentNumber = normalizeStudentNumber(rec.student_number);
+    if (!studentNumber) return errors.push({ row: rowNo, message: "MSSV phải gồm đúng 8 chữ hoặc số" });
+    rec.student_number = studentNumber;
+    const gender = normalizeGender(rec.gender);
+    if (!gender) return errors.push({ row: rowNo, message: "Thiếu Giới tính hoặc giá trị không hợp lệ" });
+    rec.gender = gender;
     const department = normalizeDepartment(rec.department);
     if (!department) return errors.push({ row: rowNo, message: "Thiếu Ban hoặc Ban không thuộc CM, VH, TT, DE, HCTC" });
     rec.department = department;
+    if (rec.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rec.email)) return errors.push({ row: rowNo, message: "Email không hợp lệ" });
+    if (rec.facebook_url && !safeUrl(rec.facebook_url)) return errors.push({ row: rowNo, message: "Link Facebook không hợp lệ" });
     valid.push(rec);
   });
   const seen = new Map<string, number>();
-  valid.forEach((v) => seen.set(v.code!, (seen.get(v.code!) ?? 0) + 1));
+  valid.forEach((v) => seen.set(v.student_number!, (seen.get(v.student_number!) ?? 0) + 1));
   const duplicates = [...seen.entries()].filter(([, n]) => n > 1).map(([c]) => c);
   return { valid, errors, duplicates };
 }
 
 /** File mẫu để Admin điền danh sách. */
 export function downloadTemplate() {
+  const fields: CandidateField[] = ["student_number", "full_name", "student_cohort", "gender", "phone", "email", "facebook_url", "department"];
   const ws = XLSX.utils.aoa_to_sheet([
-    Object.values(FIELD_LABEL),
-    ["UV001", "Nguyễn Văn A", "0901234567", "a.nguyen@example.com", "Truyền thông", "Ca 1 (8:00-10:00)", "https://drive.google.com/..."],
-    ["UV002", "Trần Thị B", "0912345678", "b.tran@example.com", "Sự kiện", "Ca 1 (8:00-10:00)", ""],
+    fields.map((field) => FIELD_LABEL[field]),
+    ["HE123456", "Nguyễn Văn A", "K22", "Nam", "0901234567", "a.nguyen@example.com", "https://facebook.com/example", "Ban Truyền Thông"],
   ]);
-  ws["!cols"] = [10, 24, 14, 28, 18, 20, 40].map((wch) => ({ wch }));
+  ws["!cols"] = [14, 24, 14, 12, 14, 28, 40, 24].map((wch) => ({ wch }));
   // Cột SĐT định dạng Text để Excel không làm mất số 0
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Thi sinh");
@@ -131,7 +141,7 @@ export function exportResults(
   const crit = [...criteria].sort((a, b) => a.sort_order - b.sort_order);
 
   const header = [
-    "Mã ứng viên", "Họ tên", "SĐT", "Email", "Ban ứng tuyển", "Ca phỏng vấn", "Trạng thái",
+    "Mã ứng viên", "MSSV", "Họ tên", "Khóa", "Giới tính", "SĐT", "Email", "Facebook", "Ban ứng tuyển", "Ca phỏng vấn", "Trạng thái",
     ...crit.map((c) => `${c.name} (/${c.max_score})`),
     "Điểm TB (/10)", "Nhận xét", "Thời lượng (mm:ss)", "Người chấm", "Phòng - Bàn",
     "Giờ check-in", "Bắt đầu PV", "Kết thúc PV", "Link CV",
@@ -147,7 +157,9 @@ export function exportResults(
     const e = evalBy.get(c.id);
     const dur = e?.duration_seconds ?? c.duration_seconds;
     return [
-      c.code, c.full_name, c.phone ?? "", c.email ?? "", c.department ?? "", c.shift ?? "", STATUS_LABEL[c.status],
+      c.code, c.student_number ?? "", c.full_name, c.student_cohort ?? "",
+      GENDERS.find((gender) => gender.code === c.gender)?.name ?? "", c.phone ?? "", c.email ?? "",
+      c.facebook_url ?? "", c.department ?? "", c.shift ?? "", STATUS_LABEL[c.status],
       ...crit.map((k) => (e?.scores?.[k.id] != null ? Number(e.scores[k.id]) : "")),
       e?.average_score != null ? Number(e.average_score) : "",
       e?.comment ?? "",

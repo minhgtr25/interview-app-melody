@@ -70,6 +70,10 @@ export interface Candidate {
   id: string;
   code: string;
   full_name: string;
+  student_number: string | null;
+  student_cohort: string | null;
+  gender: import("@/lib/personal-info").GenderCode | null;
+  facebook_url: string | null;
   phone: string | null;
   email: string | null;
   department: string | null;

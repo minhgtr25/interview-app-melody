@@ -38,19 +38,22 @@ describe("safeUrl", () => {
 });
 
 describe("autoMapHeaders", () => {
-  it("nhận diện cột tiếng Việt có dấu và tiếng Anh", () => {
-    expect(
-      autoMapHeaders(["STT", "Mã ứng viên", "Họ và tên", "Số điện thoại", "Email", "Ban ứng tuyển", "Ca phỏng vấn", "Link CV"])
-    ).toEqual([null, "code", "full_name", "phone", "email", "department", "shift", "cv_url"]);
-    expect(autoMapHeaders(["ID", "Full name", "Phone", "Team", "Slot", "CV"])).toEqual([
-      "code", "full_name", "phone", "department", "shift", "cv_url",
+  it("nhận diện đúng cột cá nhân trong Google Form và bỏ câu hỏi chuyên môn", () => {
+    expect(autoMapHeaders([
+      "Timestamp", "Họ và tên của bạn?", "Bạn là sinh viên khóa?", "Giới tính",
+      "Mã số sinh viên của bạn?", "Email của bạn (email cá nhân)", "Số điện thoại của bạn",
+      "Link Facebook của bạn", "Bạn đã biết gì về CLB?", "Bạn đăng ký Ban nào",
+      "Bạn biết gì về ban Chuyên môn?", "Ca phỏng vấn", "Link Drive video tài năng",
+    ])).toEqual([
+      null, "full_name", "student_cohort", "gender", "student_number", "email", "phone",
+      "facebook_url", null, "department", null, null, null,
     ]);
   });
   it("không gán một field cho hai cột", () => {
-    const m = autoMapHeaders(["Mã", "Mã ứng viên", "Tên"]);
-    expect(m.filter((x) => x === "code")).toHaveLength(1);
+    const m = autoMapHeaders(["MSSV", "Mã số sinh viên của bạn?", "Tên"]);
+    expect(m.filter((x) => x === "student_number")).toHaveLength(1);
   });
-  it("không dùng STT của Google Form làm mã ứng viên", () => {
+  it("không dùng STT và dấu thời gian của Google Form làm dữ liệu cá nhân", () => {
     expect(autoMapHeaders(["Dấu thời gian", "STT", "Họ và tên", "Ban ứng tuyển"])).toEqual([
       null, null, "full_name", "department",
     ]);
@@ -58,24 +61,25 @@ describe("autoMapHeaders", () => {
 });
 
 describe("applyMapping", () => {
-  it("lọc dòng thiếu dữ liệu, phát hiện mã trùng", () => {
+  it("lọc dòng thiếu dữ liệu, chuẩn hóa Ban và phát hiện MSSV trùng", () => {
     const sheet = {
       sheetName: "S",
-      headers: ["Mã", "Tên", "SĐT", "Ban"],
+      headers: ["MSSV", "Tên", "Giới tính", "SĐT", "Ban"],
       rows: [
-        ["UV1", "A", "901234567", "Chuyên Môn"],
-        ["", "B", "", "CM"],
-        ["UV2", "", "", "CM"],
-        ["UV1", "A2", "", "CM"],
-        ["UV3", "C", "", "Ban không hợp lệ"],
-        ["", "", "", ""],
+        ["HE123456", "A", "Nam", "901234567", "Ban Chuyên Môn"],
+        ["", "B", "Nữ", "", "CM"],
+        ["HE123457", "", "Nam", "", "CM"],
+        ["HE123456", "A2", "Nữ", "", "CM"],
+        ["HE123458", "C", "Nam", "", "Ban không hợp lệ"],
+        ["HE123459", "D", "Nữ", "", "Ban Nội Dung"],
       ],
     };
-    const r = applyMapping(sheet, ["code", "full_name", "phone", "department"]);
-    expect(r.valid).toHaveLength(2);
+    const r = applyMapping(sheet, ["student_number", "full_name", "gender", "phone", "department"]);
+    expect(r.valid).toHaveLength(3);
     expect(r.valid[0].phone).toBe("0901234567");
     expect(r.valid[0].department).toBe("CM");
+    expect(r.valid[2].department).toBe("TT");
     expect(r.errors.map((e) => e.row)).toEqual([3, 4, 6]);
-    expect(r.duplicates).toEqual(["UV1"]);
+    expect(r.duplicates).toEqual(["HE123456"]);
   });
 });
