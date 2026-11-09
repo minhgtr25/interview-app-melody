@@ -5,14 +5,14 @@ import Link from "next/link";
 import type { RealtimeChannel, RealtimePostgresChangesPayload } from "@supabase/supabase-js";
 import { toast } from "sonner";
 import {
-  BellRing, CheckCircle2, ExternalLink, Loader2, Minus, Plus, Send, Undo2, Coffee, Mail, Phone, Timer, Megaphone, MessageCircle, PanelRightClose, PanelRightOpen, Pause, Play,
+  BellRing, CheckCircle2, ExternalLink, Loader2, Minus, Plus, Send, Undo2, Coffee, Mail, Phone, Timer, Megaphone, MessageCircle, PanelRightClose, PanelRightOpen, Pause, Play, ShieldAlert,
 } from "lucide-react";
 import { useOpsChannel } from "@/hooks/use-ops-channel";
 import { AppHeader } from "@/components/app-header";
 import { Elapsed, useServerNow } from "@/components/clock";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { OpsChat } from "@/components/ops-chat";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
@@ -163,7 +163,9 @@ export function InterviewerBoard({
 
   const [draft, setDraft] = useState<Draft>({ scores: {}, comment: "", secondDepartment: "", secondSpecialization: "", secondDate: "", secondTime: "" });
   const serverNow = useServerNow(30_000);
-  const [busy, setBusy] = useState<"start" | "submit" | "return" | "pause" | null>(null);
+  const [busy, setBusy] = useState<"start" | "submit" | "return" | "pause" | "force" | null>(null);
+  const [adminForceOpen, setAdminForceOpen] = useState(false);
+  const [adminForceNote, setAdminForceNote] = useState("");
   const [confirm, setConfirm] = useState<"submit" | "return" | null>(null);
   const [roundTwoOpen, setRoundTwoOpen] = useState(true);
   const [finishExternal, setFinishExternal] = useState<Candidate | null>(null);
@@ -362,6 +364,21 @@ export function InterviewerBoard({
     toast.success("Đã trả thí sinh về phòng chờ");
   }
 
+  async function adminForceFinish() {
+    if (!adminPreview || !table || !adminForceNote.trim()) return;
+    setBusy("force");
+    const { error } = await createClient().rpc("admin_force_finish_interview", {
+      p_table_id: table.id,
+      p_note: adminForceNote.trim(),
+    });
+    setBusy(null);
+    if (error) return toast.error(errorMessage(error));
+    setAdminForceOpen(false);
+    setAdminForceNote("");
+    await Promise.all([tbl.refetch(), cand.refetch(), evals.refetch()]);
+    toast.success("Đã cưỡng chế kết thúc và nộp phiếu điểm 10");
+  }
+
   const ops = useOpsChannel();
   const [lastCall, setLastCall] = useState(0);
   const [callBusy, setCallBusy] = useState(false);
@@ -411,6 +428,9 @@ export function InterviewerBoard({
     <div className="min-h-dvh bg-muted/30">
       <AppHeader title={tableLabel} mobileTitle={mobileTableLabel} subtitle={interviewerName} status={status}>
         {adminPreview && <Link href="/admin/rooms" className="inline-flex h-9 shrink-0 items-center rounded-md border px-2 text-xs font-medium hover:bg-muted sm:px-3 sm:text-sm">Quản trị</Link>}
+        {adminPreview && table && (table.status === "ASSIGNED" || table.status === "INTERVIEWING") && <Button variant="destructive" size="sm" className="h-9 shrink-0 px-2 sm:px-3" onClick={() => { setAdminForceNote(""); setAdminForceOpen(true); }}>
+          <ShieldAlert /><span className="hidden sm:inline">Cưỡng chế kết thúc</span><span className="sm:hidden">Kết thúc</span>
+        </Button>}
         {canPauseDesk && table && <Button variant={table.is_paused ? "default" : "outline"} size="sm" onClick={() => void toggleDeskPause()}
           disabled={busy !== null} aria-label={table.is_paused ? "Mở lại tiếp nhận thí sinh" : "Tạm dừng tiếp nhận thí sinh"}
           title={table.is_paused ? "Mở lại tiếp nhận" : "Tạm dừng tiếp nhận"} className="h-9 shrink-0 px-2 sm:px-3">
@@ -448,6 +468,26 @@ export function InterviewerBoard({
         <DialogContent className="sm:max-w-lg">
           <DialogHeader><DialogTitle>{chatCandidateId ? `Chat về thí sinh ${cand.rows.find((item) => item.id === chatCandidateId)?.full_name ?? ""}` : `Chat với điều phối · ${room?.name} - ${table?.name}`}</DialogTitle></DialogHeader>
           <OpsChat tableId={tableId} selfId={selfId} role="interviewer" candidateId={chatCandidateId} />
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={adminForceOpen} onOpenChange={(open) => { if (busy !== "force") setAdminForceOpen(open); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Cưỡng chế kết thúc lượt phỏng vấn?</DialogTitle>
+            <DialogDescription>
+              {candidate?.full_name ?? "Thí sinh tại bàn"} sẽ được nộp phiếu điểm 10, ghi chú Admin và giải phóng bàn.
+              {table?.status === "ASSIGNED" ? " Thí sinh đang chờ giám khảo xác nhận bắt đầu." : ""}
+            </DialogDescription>
+          </DialogHeader>
+          <Textarea value={adminForceNote} onChange={(event) => setAdminForceNote(event.target.value)} maxLength={2000}
+            placeholder="Ví dụ: do quá giờ" aria-label="Lý do cưỡng chế kết thúc" />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAdminForceOpen(false)} disabled={busy === "force"}>Huỷ</Button>
+            <Button variant="destructive" onClick={() => void adminForceFinish()} disabled={busy === "force" || !adminForceNote.trim()}>
+              {busy === "force" ? <Loader2 className="animate-spin" /> : <ShieldAlert />} Kết thúc và nộp điểm 10
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

@@ -3,7 +3,8 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Clock, UserCheck, Mic, CircleCheckBig, UserX, Users, Timer, ShieldAlert } from "lucide-react";
+import Link from "next/link";
+import { Clock, UserCheck, Mic, CircleCheckBig, UserX, Users, Timer, ShieldAlert, ExternalLink } from "lucide-react";
 import { LiveIndicator } from "@/components/app-header";
 import { Elapsed } from "@/components/clock";
 import { Button } from "@/components/ui/button";
@@ -197,7 +198,7 @@ export function Dashboard({
                     <Timer className="size-3.5 text-muted-foreground" />
                     <Elapsed since={t.status === "INTERVIEWING" ? t.started_at : t.assigned_at} />
                   </span>
-                  {t.status === "INTERVIEWING" && <Button size="xs" variant="destructive" onClick={() => { setForceTable(t); setForceNote(""); }}>
+                  {(t.status === "ASSIGNED" || t.status === "INTERVIEWING") && <Button size="xs" variant="destructive" onClick={() => { setForceTable(t); setForceNote(""); }}>
                     <ShieldAlert /> Cưỡng chế kết thúc
                   </Button>}
                 </li>
@@ -207,6 +208,23 @@ export function Dashboard({
           </ul>
         </div>
       </div>
+      <section className="rounded-xl border bg-card p-4">
+        <div className="mb-3">
+          <h3 className="text-sm font-semibold">Truy cập trực tiếp bàn giám khảo</h3>
+          <p className="text-xs text-muted-foreground">Mở giao diện bất kỳ bàn nào bằng quyền Admin/Support IT, không cần đăng nhập tài khoản bàn.</p>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+          {tbl.rows.map((table) => <Link key={table.id} href={`/admin-preview/${table.id}`}
+            className="flex min-w-0 items-center justify-between gap-3 rounded-lg border px-3 py-2.5 text-sm hover:border-primary hover:bg-muted/40 focus-visible:outline-2 focus-visible:outline-primary">
+            <span className="min-w-0">
+              <span className="block truncate font-medium">{roomName.get(table.room_id) ?? "Phòng"} · {table.name}</span>
+              <span className="block text-xs text-muted-foreground">{table.department ?? "Chưa chọn ban"} · {table.status === "AVAILABLE" ? "Trống" : table.status === "ASSIGNED" ? "Chờ xác nhận" : "Đang phỏng vấn"}</span>
+            </span>
+            <ExternalLink className="size-4 shrink-0 text-muted-foreground" />
+          </Link>)}
+          {tbl.rows.length === 0 && <p className="text-sm text-muted-foreground">Chưa có bàn nào được tạo.</p>}
+        </div>
+      </section>
       <Dialog open={!!forceTable} onOpenChange={(open) => { if (!open && !forceBusy) setForceTable(null); }}>
         <DialogContent>
           <DialogHeader>
