@@ -360,25 +360,26 @@ export function InterviewerBoard({
   }
 
   const tableLabel = table ? `Phòng: ${room?.name ?? "—"} | ${table.name} | Ban: ${table.department ?? "Chưa chọn"}` : "Bàn phỏng vấn";
+  const mobileTableLabel = table ? `${room?.name ?? "—"} · ${table.name} · ${table.department ?? "—"}` : "Bàn phỏng vấn";
   const cvUrl = safeUrl(candidate?.cv_url);
 
   return (
     <div className="min-h-dvh bg-muted/30">
-      <AppHeader title={tableLabel} subtitle={interviewerName} status={status}>
-        <Button variant="outline" size="sm" onClick={() => openChat(room?.is_challenge ? candidate?.id : undefined)} aria-label="Chat với điều phối" title="Chat với điều phối" className="relative">
-          <MessageCircle /><span className="hidden md:inline">Chat</span>
+      <AppHeader title={tableLabel} mobileTitle={mobileTableLabel} subtitle={interviewerName} status={status}>
+        <Button variant="outline" size="sm" onClick={() => openChat(room?.is_challenge ? candidate?.id : undefined)} aria-label="Chat với điều phối" title="Chat với điều phối" className="relative h-9 shrink-0 px-2 sm:px-3">
+          <MessageCircle /><span className="hidden sm:inline">Chat</span>
           {chatUnread && <span className="absolute -right-1 -top-1 size-2.5 rounded-full bg-red-500" />}
         </Button>
         <Button variant="outline" size="sm" onClick={callCoordinator}
           disabled={!table || callBusy || callWait > 0}
           aria-label={callWait > 0 ? `Gọi lại điều phối sau ${callWait} giây` : "Gọi điều phối viên"}
-          title={callWait > 0 ? `Gọi lại sau ${callWait} giây` : "Gọi điều phối viên"}>
+          title={callWait > 0 ? `Gọi lại sau ${callWait} giây` : "Gọi điều phối viên"} className="h-9 shrink-0 px-2 sm:px-3">
           <Megaphone />
-          <span>{callWait > 0 ? `Gọi lại ${callWait}s` : "Gọi điều phối"}</span>
+          <span className="hidden sm:inline">{callWait > 0 ? `Gọi lại ${callWait}s` : "Gọi điều phối"}</span>
         </Button>
         {table?.status === "INTERVIEWING" && (
-          <span className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 font-mono text-lg font-semibold text-white tabular-nums">
-            <Timer className="size-4" />
+          <span className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-red-600 px-2 py-1.5 font-mono text-sm font-semibold text-white tabular-nums sm:gap-1.5 sm:px-3 sm:text-lg">
+            <Timer className="size-3.5 sm:size-4" />
             <Elapsed since={table.started_at} />
           </span>
         )}
@@ -391,30 +392,32 @@ export function InterviewerBoard({
         </DialogContent>
       </Dialog>
 
-      <main className="mx-auto max-w-3xl px-4 py-5 pb-32">
+      <main className="mx-auto max-w-3xl px-3 py-4 pb-32 sm:px-4 sm:py-5">
         {!table && <p className="py-16 text-center text-muted-foreground">Không tìm thấy bàn được phân công.</p>}
 
         {!room?.is_challenge && completedAtTable.length > 0 && (
           <aside className="mb-5 rounded-xl border border-violet-200 bg-violet-50 p-4 dark:border-violet-900 dark:bg-violet-950/30">
             <h2 className="mb-2 font-semibold">Thí sinh đã chuyển sang thử thách</h2>
             <ul className="space-y-2">
-              {completedAtTable.slice(0, 5).map(({ evaluation, candidate: item }) => item && <li key={item.id} className="flex items-center justify-between gap-3 rounded-lg border bg-background px-3 py-2 text-sm">
-                <Button size="sm" variant="outline" onClick={() => openChat(item.id)}><MessageCircle /> Chat Debate</Button>
-                <span className="min-w-0 truncate font-medium">{item.full_name} · {evaluation.table_label}</span>
-                <span className="shrink-0 text-violet-700 dark:text-violet-300">{item.challenge_status === "COMPLETED" ? "Đã hoàn tất" : item.challenge_status === "INTERVIEWING" ? "Đang thử thách" : item.challenge_status === "ASSIGNED" ? "Đã nhận" : "Chờ thử thách"}</span>
+              {completedAtTable.slice(0, 5).map(({ evaluation, candidate: item }) => item && <li key={item.id} className="flex flex-col gap-2 rounded-lg border bg-background px-3 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+                <span className="min-w-0 break-words font-medium">{item.full_name} <span className="text-muted-foreground">· {evaluation.table_label}</span></span>
+                <div className="flex items-center justify-between gap-2 sm:shrink-0 sm:justify-end">
+                  <span className="text-violet-700 dark:text-violet-300">{item.challenge_status === "COMPLETED" ? "Đã hoàn tất" : item.challenge_status === "INTERVIEWING" ? "Đang thử thách" : item.challenge_status === "ASSIGNED" ? "Đã nhận" : "Chờ thử thách"}</span>
+                  <Button size="sm" variant="outline" onClick={() => openChat(item.id)}><MessageCircle /> Chat Debate</Button>
+                </div>
               </li>)}
             </ul>
           </aside>
         )}
 
         {room?.is_challenge && table?.status === "AVAILABLE" && (
-          <section className="mb-5 rounded-2xl border border-violet-300 bg-violet-50 p-5 dark:border-violet-900 dark:bg-violet-950/30">
+          <section className="mb-5 rounded-2xl border border-violet-300 bg-violet-50 p-4 dark:border-violet-900 dark:bg-violet-950/30 sm:p-5">
             <h2 className="text-lg font-semibold">Hàng chờ thử thách · {table.department}</h2>
             <p className="mb-4 text-sm text-muted-foreground">Chọn thí sinh đã hoàn thành vòng phỏng vấn thường. Phiếu chấm và nhận xét vòng đầu sẽ được giữ nguyên.</p>
             {challengeQueue.length ? <ul className="space-y-2">
-              {challengeQueue.map((item) => <li key={item.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-background p-3">
-                <div className="min-w-0"><p className="truncate font-semibold">{item.full_name}</p><p className="font-mono text-xs text-muted-foreground">{item.code} · {item.shift ?? "Không có ca"}</p></div>
-                <Button onClick={() => void takeChallenge(item.id)} disabled={busy !== null}><CheckCircle2 /> Nhận thí sinh</Button>
+              {challengeQueue.map((item) => <li key={item.id} className="flex flex-col gap-3 rounded-xl border bg-background p-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0"><p className="break-words font-semibold">{item.full_name}</p><p className="font-mono text-xs text-muted-foreground">{item.code} · {item.shift ?? "Không có ca"}</p></div>
+                <Button className="w-full sm:w-auto" onClick={() => void takeChallenge(item.id)} disabled={busy !== null}><CheckCircle2 /> Nhận thí sinh</Button>
               </li>)}
             </ul> : <p className="rounded-lg border border-dashed p-5 text-center text-sm text-muted-foreground">Chưa có thí sinh chờ thử thách.</p>}
           </section>
@@ -435,10 +438,10 @@ export function InterviewerBoard({
 
         {/* Được gán: chờ xác nhận */}
         {table?.status === "ASSIGNED" && candidate && (
-          <div className="rounded-2xl border-2 border-amber-400 bg-amber-50 p-6 text-center shadow-lg dark:bg-amber-950/60">
+          <div className="rounded-2xl border-2 border-amber-400 bg-amber-50 p-4 text-center shadow-lg dark:bg-amber-950/60 sm:p-6">
             <BellRing className="mx-auto mb-3 size-10 animate-bounce text-amber-600" />
             <p className="text-sm font-medium text-amber-800 dark:text-amber-200">Thí sinh được gán vào bàn</p>
-            <p className="mt-2 text-2xl font-bold">{candidate.full_name}</p>
+            <p className="mt-2 break-words text-xl font-bold sm:text-2xl">{candidate.full_name}</p>
             <p className="mt-1 font-mono text-sm text-muted-foreground">{candidate.code}{candidate.student_number && ` · MSSV ${candidate.student_number}`}</p>
             <p className="mt-1 text-sm text-muted-foreground">{[candidate.department, candidate.shift].filter(Boolean).join(" · ")}</p>
             <p className="mt-3 text-xs text-muted-foreground">
@@ -466,10 +469,10 @@ export function InterviewerBoard({
         {/* Đang phỏng vấn */}
         {table?.status === "INTERVIEWING" && candidate && (
           <div className="space-y-5">
-            <section className="rounded-2xl border bg-card p-5">
-              <div className="flex items-start justify-between gap-3">
+            <section className="rounded-2xl border bg-card p-4 sm:p-5">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0">
-                  <p className="text-xl font-bold">{candidate.full_name}</p>
+                  <p className="break-words text-lg font-bold sm:text-xl">{candidate.full_name}</p>
                   <p className="font-mono text-sm text-muted-foreground">{candidate.code}{candidate.student_number && ` · MSSV ${candidate.student_number}`}</p>
                 </div>
                 {cvUrl ? (
@@ -477,7 +480,7 @@ export function InterviewerBoard({
                     href={cvUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className={cn(buttonVariants({ variant: "outline" }), "h-11 shrink-0")}
+                    className={cn(buttonVariants({ variant: "outline" }), "h-11 w-full sm:w-auto sm:shrink-0")}
                   >
                     <ExternalLink /> Mở CV
                   </a>
@@ -485,7 +488,7 @@ export function InterviewerBoard({
                   <span className="text-xs text-muted-foreground">Không có CV</span>
                 )}
               </div>
-              <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
+              <dl className="mt-4 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
                 <div>
                   <dt className="text-xs text-muted-foreground">Ban ứng tuyển</dt>
                   <dd className="font-medium">{candidate.department || "—"}</dd>
@@ -511,7 +514,7 @@ export function InterviewerBoard({
 
             <section className="space-y-4">
               {room?.is_challenge && candidateEvaluation && (
-                <section className="rounded-2xl border border-blue-200 bg-blue-50 p-4 dark:border-blue-900 dark:bg-blue-950/30">
+                <section className="rounded-2xl border border-blue-200 bg-blue-50 p-3 dark:border-blue-900 dark:bg-blue-950/30 sm:p-4">
                   <h2 className="font-semibold">Phiếu vòng phỏng vấn thường · chỉ xem</h2>
                   <p className="mt-1 text-xs text-muted-foreground">{candidateEvaluation.interviewer_name} · {candidateEvaluation.table_label}</p>
                   <ul className="mt-3 divide-y rounded-lg border bg-background">
@@ -524,8 +527,8 @@ export function InterviewerBoard({
                 </section>
               )}
               {rubric.map((r, i) => (
-                <div key={r.id} className="rounded-2xl border bg-card p-4">
-                  <div className="mb-3 flex items-baseline justify-between gap-2">
+                <div key={r.id} className="rounded-2xl border bg-card p-3 sm:p-4">
+                  <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between sm:gap-2">
                     <div>
                       <p className="font-semibold">
                         {i + 1}. {r.name}
@@ -579,10 +582,10 @@ export function InterviewerBoard({
       {/* Thanh hành động cố định đáy màn hình khi đang phỏng vấn */}
       {table?.status === "INTERVIEWING" && candidate && (
         <div className="fixed inset-x-0 bottom-0 z-30 border-t bg-background/95 backdrop-blur">
-          <div className="mx-auto flex max-w-3xl items-center gap-3 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+          <div className="mx-auto flex max-w-3xl items-center gap-2 px-2 py-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:gap-3 sm:px-4 sm:py-3">
             <Button
               variant="outline"
-              className="h-14 shrink-0 px-3"
+              className="h-12 shrink-0 px-2 sm:h-14 sm:px-3"
               onClick={() => setConfirm("return")}
               disabled={busy !== null}
               title="Nhầm thí sinh - Trả về phòng chờ"
@@ -595,7 +598,7 @@ export function InterviewerBoard({
               <p className="font-mono text-xl font-semibold tabular-nums">{avg == null ? "–" : avg.toFixed(2)}</p>
             </div>
             <Button
-              className="h-14 flex-1 text-base font-semibold"
+              className="h-12 min-w-0 flex-1 px-2 text-sm font-semibold leading-tight sm:h-14 sm:px-4 sm:text-base"
               onClick={() => setConfirm("submit")}
               disabled={busy !== null || missing.length > 0}
             >
