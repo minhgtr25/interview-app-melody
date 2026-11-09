@@ -76,7 +76,7 @@ export function errorMessage(err: unknown): string {
       23505: "Thông tin này đã tồn tại. Hãy kiểm tra mã, email hoặc tài khoản bị trùng.",
       23503: "Không thể thực hiện vì dữ liệu đang được liên kết với mục khác.",
       23514: "Thông tin chưa đúng quy tắc. Hãy kiểm tra lại các trường vừa nhập.",
-      22P02: "Định dạng dữ liệu chưa hợp lệ. Hãy kiểm tra lại thông tin vừa nhập.",
+      "22P02": "Định dạng dữ liệu chưa hợp lệ. Hãy kiểm tra lại thông tin vừa nhập.",
       PGRST116: "Không tìm thấy dữ liệu hoặc mục này đã được thay đổi ở thiết bị khác.",
       "40001": "Dữ liệu vừa được người khác cập nhật. Hãy tải lại danh sách rồi thử lại.",
       "40P01": "Hệ thống đang xử lý đồng thời. Vui lòng thử lại sau ít giây.",
