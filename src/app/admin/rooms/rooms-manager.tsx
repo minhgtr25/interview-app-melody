@@ -23,13 +23,13 @@ type TableSetup = { department: DepartmentCode | ""; createAccount: boolean; jud
 type RoomForm = {
   building: BuildingCode | "";
   number: string;
-  count: 2 | 3;
+  count: 1 | 2 | 3 | 4;
   isChallenge: boolean;
   tables: TableSetup[];
 };
 
 const emptyTable = (): TableSetup => ({ department: "", createAccount: true, judgeId: "" });
-const emptyForm = (): RoomForm => ({ building: "", number: "", count: 2, isChallenge: false, tables: [emptyTable(), emptyTable(), emptyTable()] });
+const emptyForm = (): RoomForm => ({ building: "", number: "", count: 2, isChallenge: false, tables: [emptyTable(), emptyTable(), emptyTable(), emptyTable()] });
 
 function RoomFields({ form, setForm, judges, disabled, prefix }: {
   form: RoomForm;
@@ -65,7 +65,7 @@ function RoomFields({ form, setForm, judges, disabled, prefix }: {
       <fieldset className="space-y-1.5" disabled={disabled}>
         <legend className="text-sm font-medium">3. Số bàn</legend>
         <div className="flex gap-3">
-          {([2, 3] as const).map((count) => <label key={count} className="flex items-center gap-1.5 text-sm">
+          {([1, 2, 3, 4] as const).map((count) => <label key={count} className="flex items-center gap-1.5 text-sm">
             <input type="radio" name={`${prefix}-count`} checked={form.count === count}
               onChange={() => setForm({ ...form, count })} />{count} bàn
           </label>)}
@@ -114,9 +114,9 @@ function ExistingRoom({ room, tables, profiles, busy, onSave, onDelete }: {
   const [form, setForm] = useState<RoomForm>(() => ({
     building: room.building_code ?? "",
     number: room.room_number ?? "",
-    count: sorted.length === 3 ? 3 : 2,
+    count: sorted.length >= 1 && sorted.length <= 4 ? sorted.length as 1 | 2 | 3 | 4 : 2,
     isChallenge: room.is_challenge,
-    tables: [0, 1, 2].map((index) => ({
+    tables: [0, 1, 2, 3].map((index) => ({
       department: sorted[index]?.department ?? "",
       createAccount: !profiles.some((profile) => profile.role === "INTERVIEWER" && profile.table_id === sorted[index]?.id),
       judgeId: profiles.find((profile) => profile.role === "INTERVIEWER" && profile.table_id === sorted[index]?.id)?.id ?? "",
@@ -275,7 +275,7 @@ export function RoomsManager({ rooms, tables, profiles }: { rooms: Room[]; table
   return <div className="space-y-6">
     <div>
       <h2 className="text-lg font-semibold">Cấu hình Phòng & Bàn phỏng vấn</h2>
-      <p className="text-sm text-muted-foreground">Chọn Tòa, Số phòng, 2–3 bàn, Ban và một tài khoản đại diện cho từng bàn rồi kích hoạt. Nhiều giám khảo có thể dùng chung máy của bàn; không cần cấp tài khoản riêng cho từng người.</p>
+      <p className="text-sm text-muted-foreground">Chọn Tòa, Số phòng, từ 1 đến 4 bàn, Ban và một tài khoản đại diện cho từng bàn rồi kích hoạt. Nhiều giám khảo có thể dùng chung máy của bàn; không cần cấp tài khoản riêng cho từng người.</p>
     </div>
 
     <section className="space-y-4 rounded-xl border bg-card p-4">
