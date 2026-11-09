@@ -332,12 +332,19 @@ export async function deleteCandidate(id: string): Promise<ActionResult> {
   try {
     await assertAdmin();
     const supabase = await createClient();
-    const { data } = await supabase.from("candidates").select("status").eq("id", id).maybeSingle();
-    if (data && (data.status === "ASSIGNED" || data.status === "INTERVIEWING")) {
+    const { data } = await supabase.from("candidates").select("status,challenge_status").eq("id", id).maybeSingle();
+    if (data && ((data.status === "ASSIGNED" || data.status === "INTERVIEWING") || data.challenge_status === "ASSIGNED" || data.challenge_status === "INTERVIEWING")) {
       throw new Error("Thí sinh đang ở bàn. Trả về hàng chờ trước khi xoá.");
+    }
+    const { data: linked, error: linkedError } = await supabase.from("candidates")
+      .select("status,challenge_status").eq("source_candidate_id", id);
+    if (linkedError) throw linkedError;
+    if (linked?.some((candidate) => candidate.status === "ASSIGNED" || candidate.status === "INTERVIEWING" || candidate.challenge_status === "ASSIGNED" || candidate.challenge_status === "INTERVIEWING")) {
+      throw new Error("Thí sinh có hồ sơ lượt hai đang ở bàn. Trả lượt đó về hàng chờ trước khi xoá.");
     }
     const { error } = await supabase.from("candidates").delete().eq("id", id);
     if (error) throw error;
+    revalidatePath("/admin");
     return { ok: true };
   } catch (e) {
     return fail(e);

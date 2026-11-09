@@ -20,7 +20,7 @@ import {
 import { useRealtimeRows } from "@/hooks/use-realtime-rows";
 import { createClient, prepareRealtime } from "@/lib/supabase/client";
 import { errorMessage, safeUrl } from "@/lib/format";
-import type { Candidate, InterviewTable, OpsMessage, Room, RubricCriterion } from "@/lib/types";
+import type { Candidate, Evaluation, InterviewTable, OpsMessage, Room, RubricCriterion } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { DepartmentRadio } from "@/components/department-radio";
 import type { DepartmentCode } from "@/lib/departments";
@@ -113,6 +113,7 @@ export function InterviewerBoard({
   tableId,
   initialTables,
   initialCandidates,
+  initialEvaluations,
   rooms,
   rubric,
   interviewerName,
@@ -121,6 +122,7 @@ export function InterviewerBoard({
   tableId: string;
   initialTables: InterviewTable[];
   initialCandidates: Candidate[];
+  initialEvaluations: Evaluation[];
   rooms: Room[];
   rubric: RubricCriterion[];
   interviewerName: string;
@@ -129,6 +131,7 @@ export function InterviewerBoard({
   const tbl = useRealtimeRows<InterviewTable>("tables", initialTables, "sort_order");
   const roomRows = useRealtimeRows<Room>("rooms", rooms, "sort_order");
   const cand = useRealtimeRows<Candidate>("candidates", initialCandidates);
+  const evals = useRealtimeRows<Evaluation>("evaluations", initialEvaluations);
   const patchTable = tbl.patchRow;
   const setCandidates = cand.setRows;
   const table = tbl.rows.find((t) => t.id === tableId);
@@ -136,6 +139,15 @@ export function InterviewerBoard({
   const candidate = table?.current_candidate_id
     ? cand.rows.find((c) => c.id === table.current_candidate_id)
     : undefined;
+  const candidateEvaluation = candidate ? evals.rows.find((evaluation) => evaluation.candidate_id === candidate.id) : undefined;
+  const challengeQueue = useMemo(() => cand.rows
+    .filter((item) => item.challenge_status === "WAITING" && item.department === table?.department)
+    .sort((a, b) => (a.checked_in_at ?? "").localeCompare(b.checked_in_at ?? "")), [cand.rows, table?.department]);
+  const completedAtTable = useMemo(() => evals.rows
+    .filter((evaluation) => evaluation.table_id === tableId)
+    .map((evaluation) => ({ evaluation, candidate: cand.rows.find((item) => item.id === evaluation.candidate_id) }))
+    .filter((row) => row.candidate && (row.candidate.challenge_table_id || row.candidate.challenge_status))
+    .sort((a, b) => (b.evaluation.ended_at ?? "").localeCompare(a.evaluation.ended_at ?? "")), [evals.rows, cand.rows, tableId]);
 
   const status = tbl.status === "live" && cand.status === "live" ? "live" : tbl.status === "offline" || cand.status === "offline" ? "offline" : "connecting";
 
@@ -248,8 +260,17 @@ export function InterviewerBoard({
     if (error) return toast.error(errorMessage(error));
     const now = new Date().toISOString();
     tbl.patchRow(tableId, { status: "INTERVIEWING", started_at: now });
-    if (candidate) cand.patchRow(candidate.id, { status: "INTERVIEWING", interview_started_at: now });
+    if (candidate) cand.patchRow(candidate.id, { status: "INTERVIEWING", challenge_status: room?.is_challenge ? "INTERVIEWING" : candidate.challenge_status, interview_started_at: now });
     toast.success("Bắt đầu phỏng vấn");
+  }
+
+  async function takeChallenge(candidateId: string) {
+    setBusy("start");
+    const { error } = await createClient().rpc("assign_challenge_candidate", { p_candidate_id: candidateId, p_table_id: tableId });
+    setBusy(null);
+    if (error) return toast.error(errorMessage(error));
+    await Promise.all([cand.refetch(), tbl.refetch(), evals.refetch()]);
+    toast.success("Đã nhận thí sinh thử thách");
   }
 
   async function submit() {
@@ -257,23 +278,28 @@ export function InterviewerBoard({
     if (!candidate) return;
     setBusy("submit");
     const client = createClient();
-    let { error } = await client.rpc("submit_evaluation_with_referral", {
+    let { error } = room?.is_challenge
+      ? await client.rpc("submit_challenge_evaluation", { p_table_id: tableId, p_scores: draft.scores, p_comment: draft.comment })
+      : await client.rpc("submit_evaluation_with_referral", {
       p_table_id: tableId,
       p_scores: draft.scores,
       p_comment: draft.comment,
       p_second_department: candidate.department === "CM" && table?.department === "CM" ? draft.secondDepartment || null : null,
     });
-    if (error?.code === "PGRST202" && !draft.secondDepartment) {
+    if (error?.code === "PGRST202" && !draft.secondDepartment && !room?.is_challenge) {
       ({ error } = await client.rpc("submit_evaluation", {
         p_table_id: tableId, p_scores: draft.scores, p_comment: draft.comment,
       }));
     }
     setBusy(null);
-    if (error) return toast.error(error.code === "PGRST202" ? "Database chưa cập nhật chức năng Ban thứ hai. Chạy migration 20261108_departments_and_referrals.sql." : errorMessage(error));
+    if (error) return toast.error(error.code === "PGRST202" ? `Database chưa cập nhật RPC ${room?.is_challenge ? "thử thách" : "Ban thứ hai"}. Chạy các migration mới nhất.` : errorMessage(error));
     clearDraft(candidate.id);
     tbl.patchRow(tableId, { status: "AVAILABLE", current_candidate_id: null, assigned_at: null, started_at: null });
-    cand.patchRow(candidate.id, { status: "COMPLETED", interview_ended_at: new Date().toISOString() });
-    toast.success(draft.secondDepartment ? `Đã nộp đánh giá và chuyển nguyện vọng ${draft.secondDepartment} cho Điều phối` : `Đã nộp đánh giá cho ${candidate.full_name}`);
+    const sendsToChallenge = !room?.is_challenge && ["VH", "HCTC"].includes(candidate.department ?? "");
+    const finalStatus = room?.is_challenge || !sendsToChallenge ? "COMPLETED" : "CHECKED_IN";
+    cand.patchRow(candidate.id, { status: finalStatus, challenge_status: room?.is_challenge ? "COMPLETED" : sendsToChallenge ? "WAITING" : null, interview_ended_at: room?.is_challenge || !sendsToChallenge ? new Date().toISOString() : candidate.interview_ended_at });
+    void evals.refetch();
+    toast.success(room?.is_challenge ? `Đã hoàn tất thử thách cho ${candidate.full_name}` : sendsToChallenge ? `Đã chuyển ${candidate.full_name} sang hàng chờ thử thách` : draft.secondDepartment ? `Đã nộp đánh giá và chuyển nguyện vọng ${draft.secondDepartment} cho Điều phối` : `Đã nộp đánh giá cho ${candidate.full_name}`);
   }
 
   async function returnToQueue() {
@@ -284,7 +310,9 @@ export function InterviewerBoard({
     if (error) return toast.error(errorMessage(error));
     if (candidate) clearDraft(candidate.id);
     tbl.patchRow(tableId, { status: "AVAILABLE", current_candidate_id: null, assigned_at: null, started_at: null });
-    if (candidate) cand.patchRow(candidate.id, { status: "CHECKED_IN", table_id: null, assigned_at: null, interview_started_at: null });
+    if (candidate) cand.patchRow(candidate.id, room?.is_challenge
+      ? { status: "CHECKED_IN", challenge_status: "WAITING", challenge_table_id: null, assigned_at: null, interview_started_at: null }
+      : { status: "CHECKED_IN", table_id: null, assigned_at: null, interview_started_at: null });
     toast.success("Đã trả thí sinh về phòng chờ");
   }
 
@@ -364,8 +392,33 @@ export function InterviewerBoard({
       <main className="mx-auto max-w-3xl px-4 py-5 pb-32">
         {!table && <p className="py-16 text-center text-muted-foreground">Không tìm thấy bàn được phân công.</p>}
 
+        {!room?.is_challenge && completedAtTable.length > 0 && (
+          <aside className="mb-5 rounded-xl border border-violet-200 bg-violet-50 p-4 dark:border-violet-900 dark:bg-violet-950/30">
+            <h2 className="mb-2 font-semibold">Thí sinh đã chuyển sang thử thách</h2>
+            <ul className="space-y-2">
+              {completedAtTable.slice(0, 5).map(({ evaluation, candidate: item }) => item && <li key={item.id} className="flex items-center justify-between gap-3 rounded-lg border bg-background px-3 py-2 text-sm">
+                <span className="min-w-0 truncate font-medium">{item.full_name} · {evaluation.table_label}</span>
+                <span className="shrink-0 text-violet-700 dark:text-violet-300">{item.challenge_status === "COMPLETED" ? "Đã hoàn tất" : item.challenge_status === "INTERVIEWING" ? "Đang thử thách" : item.challenge_status === "ASSIGNED" ? "Đã nhận" : "Chờ thử thách"}</span>
+              </li>)}
+            </ul>
+          </aside>
+        )}
+
+        {room?.is_challenge && table?.status === "AVAILABLE" && (
+          <section className="mb-5 rounded-2xl border border-violet-300 bg-violet-50 p-5 dark:border-violet-900 dark:bg-violet-950/30">
+            <h2 className="text-lg font-semibold">Hàng chờ thử thách · {table.department}</h2>
+            <p className="mb-4 text-sm text-muted-foreground">Chọn thí sinh đã hoàn thành vòng phỏng vấn thường. Phiếu chấm và nhận xét vòng đầu sẽ được giữ nguyên.</p>
+            {challengeQueue.length ? <ul className="space-y-2">
+              {challengeQueue.map((item) => <li key={item.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-background p-3">
+                <div className="min-w-0"><p className="truncate font-semibold">{item.full_name}</p><p className="font-mono text-xs text-muted-foreground">{item.code} · {item.shift ?? "Không có ca"}</p></div>
+                <Button onClick={() => void takeChallenge(item.id)} disabled={busy !== null}><CheckCircle2 /> Nhận thí sinh</Button>
+              </li>)}
+            </ul> : <p className="rounded-lg border border-dashed p-5 text-center text-sm text-muted-foreground">Chưa có thí sinh chờ thử thách.</p>}
+          </section>
+        )}
+
         {/* Trống */}
-        {table?.status === "AVAILABLE" && (
+        {table?.status === "AVAILABLE" && !room?.is_challenge && (
           <div className="flex flex-col items-center gap-3 py-20 text-center">
             <div className="flex size-16 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
               <Coffee className="size-8" />
@@ -454,6 +507,19 @@ export function InterviewerBoard({
             </section>
 
             <section className="space-y-4">
+              {room?.is_challenge && candidateEvaluation && (
+                <section className="rounded-2xl border border-blue-200 bg-blue-50 p-4 dark:border-blue-900 dark:bg-blue-950/30">
+                  <h2 className="font-semibold">Phiếu vòng phỏng vấn thường · chỉ xem</h2>
+                  <p className="mt-1 text-xs text-muted-foreground">{candidateEvaluation.interviewer_name} · {candidateEvaluation.table_label}</p>
+                  <ul className="mt-3 divide-y rounded-lg border bg-background">
+                    {rubric.map((criterion) => <li key={criterion.id} className="flex justify-between gap-3 px-3 py-2 text-sm">
+                      <span>{criterion.name}</span><span className="font-semibold">{candidateEvaluation.scores?.[criterion.id] ?? "—"}/{criterion.max_score}</span>
+                    </li>)}
+                    <li className="flex justify-between px-3 py-2 text-sm font-semibold"><span>Điểm trung bình</span><span>{candidateEvaluation.average_score ?? "—"}/10</span></li>
+                  </ul>
+                  <p className="mt-3 whitespace-pre-wrap rounded-lg bg-background p-3 text-sm">{candidateEvaluation.comment || "Không có nhận xét"}</p>
+                </section>
+              )}
               {rubric.map((r, i) => (
                 <div key={r.id} className="rounded-2xl border bg-card p-4">
                   <div className="mb-3 flex items-baseline justify-between gap-2">
@@ -482,8 +548,8 @@ export function InterviewerBoard({
               )}
 
               <div className="rounded-2xl border bg-card p-4">
-                <label htmlFor="comment" className="mb-2 block font-semibold">
-                  Nhận xét
+                  <label htmlFor="comment" className="mb-2 block font-semibold">
+                  {room?.is_challenge ? "Nhận xét thử thách" : "Nhận xét"}
                 </label>
                 <Textarea
                   id="comment"

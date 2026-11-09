@@ -1,7 +1,7 @@
 import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { fetchAll } from "@/lib/fetch-all";
-import type { Candidate, InterviewTable, Room, RubricCriterion } from "@/lib/types";
+import type { Candidate, Evaluation, InterviewTable, Room, RubricCriterion } from "@/lib/types";
 import { ClockProvider } from "@/components/clock";
 import { AppHeader } from "@/components/app-header";
 import { InterviewerBoard } from "./interviewer-board";
@@ -27,11 +27,12 @@ export default async function InterviewerPage() {
   }
 
   const supabase = await createClient();
-  const [tables, candidates, rooms, rubric] = await Promise.all([
+  const [tables, candidates, rooms, rubric, evaluations] = await Promise.all([
     fetchAll<InterviewTable>(supabase, "tables", "sort_order"),
     fetchAll<Candidate>(supabase, "candidates"),
     fetchAll<Room>(supabase, "rooms", "sort_order"),
     fetchAll<RubricCriterion>(supabase, "rubric_criteria", "sort_order"),
+    fetchAll<Evaluation>(supabase, "evaluations"),
   ]);
 
   return (
@@ -40,6 +41,7 @@ export default async function InterviewerPage() {
         tableId={profile.table_id}
         initialTables={tables}
         initialCandidates={candidates}
+        initialEvaluations={evaluations}
         rooms={rooms}
         rubric={rubric.filter((r) => r.active)}
         interviewerName={name}

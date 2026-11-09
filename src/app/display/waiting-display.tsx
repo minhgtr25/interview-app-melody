@@ -29,7 +29,6 @@ export function WaitingDisplay({ initialCalls, initialSettings, initialTables }:
     return () => { window.clearInterval(timer); window.clearInterval(refresh); };
   }, [refetchCalls, refetchSettings]);
 
-  const mode = settings.rows.find((row) => row.id === "main")?.identity_mode ?? "NAME";
   const tableNames = useMemo(() => new Map(tables.rows.map((table) => [table.id, table.name])), [tables.rows]);
   const grouped = useMemo(() => DEPARTMENTS.map((department) => ({
     department,
@@ -74,11 +73,11 @@ export function WaitingDisplay({ initialCalls, initialSettings, initialTables }:
                     : "flex min-h-20 items-center justify-center rounded-xl border border-dashed border-[#43514a] px-3 py-3 text-center"}>
                     {entry ? <div className="flex min-w-0 flex-col items-center justify-center gap-1.5">
                       <p className={`max-w-full text-balance font-semibold leading-[1.15] break-words ${
-                        (mode === "CODE" ? entry.display_code : entry.display_name).length > 28
+                        entry.display_name.length > 28
                           ? "text-[clamp(1rem,1.15vw,1.4rem)]"
                           : "text-[clamp(1.125rem,1.45vw,1.875rem)]"
                       }`}>
-                        {mode === "CODE" ? entry.display_code : entry.display_name}
+                        {entry.display_name}
                       </p>
                       <p className="max-w-full text-balance font-mono text-[clamp(0.95rem,1.1vw,1.35rem)] leading-tight font-semibold tracking-wide text-[#dbbd92]">
                         {entry.room_label}{entry.table_id && tableNames.has(entry.table_id) ? ` · ${tableNames.get(entry.table_id)}` : ""}

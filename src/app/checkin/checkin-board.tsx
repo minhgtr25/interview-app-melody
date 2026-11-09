@@ -177,6 +177,7 @@ export function CheckinBoard({
 
   function Actions({ c, size = "default" }: { c: Candidate; size?: "default" | "lg" }) {
     const busy = busyId === c.id;
+    if (c.challenge_status) return <span className="rounded-full bg-violet-100 px-2.5 py-1 text-xs font-semibold text-violet-800 dark:bg-violet-950 dark:text-violet-200">{c.challenge_status === "COMPLETED" ? "Đã xong thử thách" : c.challenge_status === "INTERVIEWING" ? "Đang thử thách" : "Đang chờ thử thách"}</span>;
     if (c.status === "NOT_ARRIVED" || c.status === "ABSENT") {
       return (
         <Button

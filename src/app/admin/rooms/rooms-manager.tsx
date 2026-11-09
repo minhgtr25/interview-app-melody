@@ -24,11 +24,12 @@ type RoomForm = {
   building: BuildingCode | "";
   number: string;
   count: 2 | 3;
+  isChallenge: boolean;
   tables: TableSetup[];
 };
 
 const emptyTable = (): TableSetup => ({ department: "", createAccount: true, judgeId: "" });
-const emptyForm = (): RoomForm => ({ building: "", number: "", count: 2, tables: [emptyTable(), emptyTable(), emptyTable()] });
+const emptyForm = (): RoomForm => ({ building: "", number: "", count: 2, isChallenge: false, tables: [emptyTable(), emptyTable(), emptyTable()] });
 
 function RoomFields({ form, setForm, judges, disabled, prefix }: {
   form: RoomForm;
@@ -64,6 +65,12 @@ function RoomFields({ form, setForm, judges, disabled, prefix }: {
         </div>
       </fieldset>
     </div>
+    <label className="flex items-start gap-2 rounded-lg border border-violet-300 bg-violet-50 p-3 text-sm dark:border-violet-900 dark:bg-violet-950/30">
+      <input type="checkbox" checked={form.isChallenge} disabled={disabled}
+        onChange={(event) => setForm({ ...form, isChallenge: event.target.checked })} />
+      <span><span className="block font-semibold">Phòng thử thách (Debate) · chỉ dành cho VH hoặc HCTC</span>
+        <span className="text-muted-foreground">Điều phối xem được nhưng không thể gán thí sinh; Giám khảo tự nhận từ hàng chờ thử thách.</span></span>
+    </label>
     {form.building && isRoomNumber(form.number) && <p className="text-sm font-semibold">Mã phòng: {roomCode(form.building, form.number)}</p>}
     <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
       {form.tables.slice(0, form.count).map((table, index) => <div key={index} className="space-y-3 rounded-lg border p-3">
@@ -101,6 +108,7 @@ function ExistingRoom({ room, tables, profiles, busy, onSave, onDelete }: {
     building: room.building_code ?? "",
     number: room.room_number ?? "",
     count: sorted.length === 3 ? 3 : 2,
+    isChallenge: room.is_challenge,
     tables: [0, 1, 2].map((index) => ({
       department: sorted[index]?.department ?? "",
       createAccount: !profiles.some((profile) => profile.role === "INTERVIEWER" && profile.table_id === sorted[index]?.id),
@@ -155,6 +163,8 @@ export function RoomsManager({ rooms, tables, profiles }: { rooms: Room[]; table
     const selected = form.tables.slice(0, form.count);
     if (selected.some((table) => !isDepartmentCode(table.department) || (!table.createAccount && !table.judgeId)))
       return toast.error("Mỗi bàn cần Ban và một tài khoản đại diện");
+    if (form.isChallenge && (selected.some((table) => table.department !== selected[0]?.department) || !["VH", "HCTC"].includes(selected[0]?.department ?? "")))
+      return toast.error("Phòng thử thách chỉ dùng một Ban duy nhất là VH hoặc HCTC");
     const existingIds = selected.filter((table) => !table.createAccount).map((table) => table.judgeId);
     if (new Set(existingIds).size !== existingIds.length)
       return toast.error("Một tài khoản đại diện chỉ được gán cho một bàn");
@@ -176,13 +186,13 @@ export function RoomsManager({ rooms, tables, profiles }: { rooms: Room[]; table
     try {
       if (existing) {
         const { error } = await supabase.from("rooms").update({
-          building_code: form.building, room_number: form.number, is_configured: false,
+          building_code: form.building, room_number: form.number, is_configured: false, is_challenge: form.isChallenge,
         }).eq("id", existing.id);
         if (error) throw error;
       } else {
         const { data, error } = await supabase.from("rooms").insert({
           name: roomCode(form.building, form.number), building_code: form.building,
-          room_number: form.number, is_configured: false,
+          room_number: form.number, is_configured: false, is_challenge: form.isChallenge,
           sort_order: (rooms.at(-1)?.sort_order ?? 0) + 1,
         }).select("id").single();
         if (error || !data) throw error ?? new Error("Không tạo được phòng");

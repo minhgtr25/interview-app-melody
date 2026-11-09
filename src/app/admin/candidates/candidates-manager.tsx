@@ -24,6 +24,7 @@ import { deleteAllCandidates, deleteCandidate, saveCandidate, type CandidateInpu
 import { ImportDialog } from "./import-dialog";
 import { DepartmentRadio } from "@/components/department-radio";
 import { type DepartmentCode, isDepartmentCode } from "@/lib/departments";
+import { DEPARTMENTS } from "@/lib/departments";
 import { GENDERS } from "@/lib/personal-info";
 import { groupCandidateApplications } from "@/components/candidate-applications";
 
@@ -48,6 +49,7 @@ export function CandidatesManager({
   const q = useDeferredValue(query);
   const [statusF, setStatusF] = useState<"" | CandidateStatus>("");
   const [deptF, setDeptF] = useState<DepartmentCode | "">("");
+  const [exportDept, setExportDept] = useState<DepartmentCode>("CM");
   const [sourceF, setSourceF] = useState<"" | "CHECKIN">("");
   const [editing, setEditing] = useState<{ id: string | null; data: CandidateInput } | null>(null);
   const [viewing, setViewing] = useState<Candidate | null>(null);
@@ -80,7 +82,7 @@ export function CandidatesManager({
     return list;
   }
 
-  async function onExport() {
+  async function onExport(department?: DepartmentCode) {
     setBusy(true);
     try {
       const supabase = createClient();
@@ -89,8 +91,8 @@ export function CandidatesManager({
         fetchAll<Evaluation>(supabase, "evaluations"),
         loadCriteria(),
       ]);
-      exportResults(c, e, r);
-      toast.success(`Đã xuất ${c.length} thí sinh`);
+      exportResults(c, e, r, department);
+      toast.success(`Đã xuất ${department ? `${department}: ` : ""}${department ? c.filter((candidate) => candidate.department === department).length : c.length} thí sinh`);
     } catch (err) {
       toast.error(errorMessage(err));
     } finally {
@@ -145,9 +147,17 @@ export function CandidatesManager({
         <Button variant="outline" onClick={() => setEditing({ id: null, data: { ...EMPTY } })}>
           <Plus /> Thêm
         </Button>
-        <Button variant="outline" onClick={onExport} disabled={busy}>
+        <Button variant="outline" onClick={() => void onExport()} disabled={busy}>
           {busy ? <Loader2 className="animate-spin" /> : <Download />} Xuất kết quả Excel
         </Button>
+        <div className="flex items-center gap-1.5">
+          <select className={SELECT_CLS} value={exportDept} onChange={(event) => setExportDept(event.target.value as DepartmentCode)} aria-label="Chọn ban để xuất Excel">
+            {DEPARTMENTS.map((department) => <option key={department.code} value={department.code}>{department.code} · {department.name}</option>)}
+          </select>
+          <Button variant="outline" onClick={() => void onExport(exportDept)} disabled={busy}>
+            {busy ? <Loader2 className="animate-spin" /> : <Download />} Xuất theo ban
+          </Button>
+        </div>
       </div>
 
       <div className="flex flex-col gap-2 md:flex-row">
@@ -199,7 +209,7 @@ export function CandidatesManager({
                   <TableCell className="tabular-nums">{c.phone}</TableCell>
                   <TableCell>{group?.departments.join(" · ") || c.department}</TableCell>
                   <TableCell className="max-w-40 truncate">{group?.shifts.join(" ; ") || c.shift}</TableCell>
-                  <TableCell><StatusBadge status={c.status} /></TableCell>
+                  <TableCell><div className="flex flex-wrap items-center gap-1"><StatusBadge status={c.status} />{c.challenge_status && <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-semibold text-violet-800 dark:bg-violet-950 dark:text-violet-200">{c.challenge_status === "WAITING" ? "Chờ thử thách" : c.challenge_status === "ASSIGNED" ? "Đã nhận thử thách" : c.challenge_status === "INTERVIEWING" ? "Đang thử thách" : "Đã xong thử thách"}</span>}</div></TableCell>
                   <TableCell className="min-w-44 text-xs">
                     {c.added_by_name ? <>
                       <span className="inline-block rounded-full bg-amber-100 px-2 py-0.5 font-semibold text-amber-900">{c.added_by_role === "CHECKIN" ? "Check-in bổ sung" : "Bổ sung tại Check-in"}</span>
@@ -355,6 +365,14 @@ export function CandidatesManager({
                       <p className="mb-1 text-xs text-muted-foreground">Nhận xét</p>
                       <p className="whitespace-pre-wrap rounded-lg bg-muted/50 p-3">{viewEval.comment || "(Không có)"}</p>
                     </div>
+                    {viewEval.challenge_ended_at && <section className="space-y-3 rounded-xl border border-violet-200 bg-violet-50 p-4 dark:border-violet-900 dark:bg-violet-950/30">
+                      <div><h3 className="font-semibold">Vòng thử thách</h3><p className="text-xs text-muted-foreground">{viewEval.challenge_interviewer_name} · {viewEval.challenge_table_label}</p></div>
+                      <ul className="divide-y rounded-lg border bg-background">
+                        {criteria.map((criterion) => <li key={criterion.id} className="flex justify-between px-3 py-2 text-sm"><span>{criterion.name}</span><span>{viewEval.challenge_scores?.[criterion.id] ?? "—"}/{criterion.max_score}</span></li>)}
+                        <li className="flex justify-between bg-muted/50 px-3 py-2 text-sm font-semibold"><span>Điểm trung bình</span><span>{viewEval.challenge_average_score ?? "—"}/10</span></li>
+                      </ul>
+                      <p className="whitespace-pre-wrap rounded-lg bg-background p-3 text-sm">{viewEval.challenge_comment || "Không có nhận xét"}</p>
+                    </section>}
                   </>
                 ) : (
                   <p className="text-muted-foreground">Chưa có phiếu đánh giá.</p>
@@ -373,7 +391,7 @@ export function CandidatesManager({
             </AlertDialogTitle>
             <AlertDialogDescription>
               {confirm?.kind === "reset" && `${confirm.c.full_name}: phiếu đánh giá (nếu có) sẽ bị xoá và bàn đang ngồi sẽ được giải phóng.`}
-              {confirm?.kind === "delete" && `${confirm.c.full_name} và phiếu đánh giá sẽ bị xoá vĩnh viễn.`}
+              {confirm?.kind === "delete" && `${confirm.c.full_name}${(groupByCandidate.get(confirm.c.id)?.applications.length ?? 0) > 1 ? " cùng các hồ sơ lượt phỏng vấn liên kết" : ""} và toàn bộ phiếu đánh giá sẽ bị xoá vĩnh viễn.`}
               {confirm?.kind === "deleteAll" && "Toàn bộ thí sinh và kết quả chấm sẽ bị xoá vĩnh viễn. Hãy xuất Excel trước. Gõ XOA TAT CA để xác nhận."}
             </AlertDialogDescription>
           </AlertDialogHeader>

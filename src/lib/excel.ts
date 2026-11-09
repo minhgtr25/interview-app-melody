@@ -172,16 +172,23 @@ export function downloadTemplate() {
 export function exportResults(
   candidates: Candidate[],
   evaluations: Evaluation[],
-  criteria: RubricCriterion[]
+  criteria: RubricCriterion[],
+  department?: string,
 ) {
+  const allCandidates = candidates;
+  if (department) candidates = candidates.filter((candidate) => candidate.department === department);
+  const candidateIds = new Set(candidates.map((candidate) => candidate.id));
+  evaluations = evaluations.filter((evaluation) => candidateIds.has(evaluation.candidate_id));
   const evalBy = new Map(evaluations.map((e) => [e.candidate_id, e]));
-  const candidateById = new Map(candidates.map((candidate) => [candidate.id, candidate]));
+  const candidateById = new Map(allCandidates.map((candidate) => [candidate.id, candidate]));
   const crit = [...criteria].sort((a, b) => a.sort_order - b.sort_order);
 
   const header = [
     "Mã ứng viên", "MSSV", "MSSV cần xác minh", "Lượt phỏng vấn", "Họ tên", "Khóa", "Giới tính", "SĐT", "Email", "Facebook", "Ban ứng tuyển", "Ca phỏng vấn", "Trạng thái",
     ...crit.map((c) => `${c.name} (/${c.max_score})`),
     "Điểm TB (/10)", "Nhận xét", "Thời lượng (mm:ss)", "Người chấm", "Phòng - Bàn",
+    ...crit.map((c) => `Thử thách · ${c.name} (/${c.max_score})`),
+    "Điểm thử thách TB (/10)", "Nhận xét thử thách", "Giám khảo thử thách", "Phòng thử thách - Bàn", "Thời lượng thử thách (mm:ss)",
     "Giờ check-in", "Bắt đầu PV", "Kết thúc PV", "Link CV",
   ];
 
@@ -205,6 +212,12 @@ export function exportResults(
       dur != null ? formatDuration(dur) : "",
       e?.interviewer_name ?? "",
       e?.table_label ?? "",
+      ...crit.map((k) => (e?.challenge_scores?.[k.id] != null ? Number(e.challenge_scores[k.id]) : "")),
+      e?.challenge_average_score != null ? Number(e.challenge_average_score) : "",
+      e?.challenge_comment ?? "",
+      e?.challenge_interviewer_name ?? "",
+      e?.challenge_table_label ?? "",
+      e?.challenge_duration_seconds != null ? formatDuration(e.challenge_duration_seconds) : "",
       formatDateTime(c.checked_in_at),
       formatDateTime(e?.started_at ?? c.interview_started_at),
       formatDateTime(e?.ended_at ?? c.interview_ended_at),
@@ -213,7 +226,7 @@ export function exportResults(
   });
 
   const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
-  ws["!cols"] = header.map((h, i) => ({ wch: i === header.indexOf("Nhận xét") ? 50 : Math.min(Math.max(h.length + 2, 10), 30) }));
+  ws["!cols"] = header.map((h) => ({ wch: h.includes("Nhận xét") ? 50 : Math.min(Math.max(h.length + 2, 10), 30) }));
   ws["!autofilter"] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: rows.length, c: header.length - 1 } }) };
   ws["!freeze"] = { xSplit: 2, ySplit: 1 };
 
@@ -244,5 +257,5 @@ export function exportResults(
   XLSX.utils.book_append_sheet(wb, ws, "Kết quả");
   XLSX.utils.book_append_sheet(wb, summary, "Tổng hợp theo ban");
   const stamp = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, "");
-  XLSX.writeFile(wb, `ket_qua_phong_van_${stamp}.xlsx`);
+  XLSX.writeFile(wb, `ket_qua_phong_van${department ? `_${department}` : ""}_${stamp}.xlsx`);
 }

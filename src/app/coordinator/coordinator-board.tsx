@@ -26,7 +26,7 @@ import { useRealtimeRows } from "@/hooks/use-realtime-rows";
 import { useOpsChannel } from "@/hooks/use-ops-channel";
 import { createClient, prepareRealtime } from "@/lib/supabase/client";
 import { errorMessage, normalizeText } from "@/lib/format";
-import type { Candidate, DisplaySettings, InterviewTable, OpsMessage, Room } from "@/lib/types";
+import type { Candidate, InterviewTable, OpsMessage, Room } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { DEPARTMENTS } from "@/lib/departments";
 import type { DepartmentCode } from "@/lib/departments";
@@ -42,21 +42,18 @@ export function CoordinatorBoard({
   initialCandidates,
   initialTables,
   rooms,
-  initialDisplaySettings,
   staffName,
   selfId,
 }: {
   initialCandidates: Candidate[];
   initialTables: InterviewTable[];
   rooms: Room[];
-  initialDisplaySettings: DisplaySettings[];
   staffName: string;
   selfId: string;
 }) {
   const cand = useRealtimeRows<Candidate>("candidates", initialCandidates);
   const tbl = useRealtimeRows<InterviewTable>("tables", initialTables, "sort_order");
   const roomRows = useRealtimeRows<Room>("rooms", rooms, "sort_order");
-  const displaySettings = useRealtimeRows<DisplaySettings>("display_settings", initialDisplaySettings, "id");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [dragOverTable, setDragOverTable] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -67,7 +64,6 @@ export function CoordinatorBoard({
   const deferredQueueSearch = normalizeText(useDeferredValue(queueSearch));
   const [chatTableId, setChatTableId] = useState<string | null>(null);
   const [unreadTables, setUnreadTables] = useState<Set<string>>(() => new Set());
-  const [displayModeBusy, setDisplayModeBusy] = useState(false);
   const [alarms, setAlarms] = useState<{ id: string; label: string; body: string; tableId: string; fading: boolean }[]>([]);
   const seenSecondInterviews = useRef<Set<string> | null>(null);
   const tablesRef = useRef(tbl.rows);
@@ -84,19 +80,6 @@ export function CoordinatorBoard({
       next.delete(tableId);
       return next;
     });
-  }
-
-  async function setDisplayMode(mode: DisplaySettings["identity_mode"]) {
-    if (displayModeBusy) return;
-    setDisplayModeBusy(true);
-    const previous = displaySettings.rows.find((row) => row.id === "main")?.identity_mode ?? "NAME";
-    displaySettings.patchRow("main", { identity_mode: mode });
-    const { error } = await createClient().from("display_settings").update({ identity_mode: mode }).eq("id", "main");
-    setDisplayModeBusy(false);
-    if (error) {
-      displaySettings.patchRow("main", { identity_mode: previous });
-      toast.error(errorMessage(error));
-    }
   }
 
   useEffect(() => {
@@ -174,7 +157,7 @@ export function CoordinatorBoard({
   }, [cand.rows]);
 
   useEffect(() => {
-    const incoming = cand.rows.filter((c) => c.source_candidate_id && c.status === "CHECKED_IN");
+    const incoming = cand.rows.filter((c) => c.source_candidate_id && c.status === "CHECKED_IN" && !c.challenge_status);
     if (seenSecondInterviews.current) {
       for (const candidate of incoming) if (!seenSecondInterviews.current.has(candidate.id)) {
         toast.info(`Có lượt phỏng vấn Ban thứ hai: ${candidate.department}`, {
@@ -188,7 +171,7 @@ export function CoordinatorBoard({
   const queue = useMemo(
     () =>
       cand.rows
-        .filter((c) => c.status === "CHECKED_IN" && (!queueDepartment || c.department === queueDepartment)
+        .filter((c) => c.status === "CHECKED_IN" && !c.challenge_status && (!queueDepartment || c.department === queueDepartment)
           && (!deferredQueueSearch || normalizeText(`${c.full_name} ${c.code} ${c.student_number ?? ""} ${c.phone ?? ""}`).includes(deferredQueueSearch)))
         .sort((a, b) => (a.checked_in_at ?? "").localeCompare(b.checked_in_at ?? "")),
     [cand.rows, queueDepartment, deferredQueueSearch]
@@ -213,7 +196,7 @@ export function CoordinatorBoard({
   }, [tbl.rows, roomRows.rows]);
 
   const roomById = useMemo(() => new Map(roomRows.rows.map((room) => [room.id, room])), [roomRows.rows]);
-  const freeCount = tbl.rows.filter((t) => t.status === "AVAILABLE" && t.department && roomById.get(t.room_id)?.is_configured).length;
+  const freeCount = tbl.rows.filter((t) => t.status === "AVAILABLE" && t.department && roomById.get(t.room_id)?.is_configured && !roomById.get(t.room_id)?.is_challenge).length;
   const selected = selectedId ? candById.get(selectedId) : undefined;
   // Bỏ chọn nếu thí sinh đã rời hàng chờ (do người khác gán)
   const selectedValid = selected && selected.status === "CHECKED_IN" ? selected : undefined;
@@ -222,6 +205,7 @@ export function CoordinatorBoard({
     const c = candById.get(candidateId);
     if (!c || c.status !== "CHECKED_IN") return toast.error("Thí sinh không còn ở hàng chờ");
     if (table.status !== "AVAILABLE") return toast.error("Bàn này đang bận");
+    if (roomById.get(table.room_id)?.is_challenge) return toast.error("Bàn thử thách do Giám khảo tự nhận thí sinh");
     if (!roomById.get(table.room_id)?.is_configured) return toast.error("Phòng chưa được kích hoạt");
     if (!table.department || c.department !== table.department) return toast.error("Ban của thí sinh không khớp Ban phụ trách bàn");
     setBusy(table.id);
@@ -261,13 +245,14 @@ export function CoordinatorBoard({
   }
 
   function onTableClick(t: InterviewTable) {
+    if (roomById.get(t.room_id)?.is_challenge) return;
     if (t.status !== "AVAILABLE") return;
     if (!selectedValid) {
       toast.info("Chọn một thí sinh trong hàng chờ trước");
       setTab("queue");
       return;
     }
-    if (!roomById.get(t.room_id)?.is_configured || !t.department || selectedValid.department !== t.department) return;
+    if (roomById.get(t.room_id)?.is_challenge || !roomById.get(t.room_id)?.is_configured || !t.department || selectedValid.department !== t.department) return;
     void assign(selectedValid.id, t);
   }
 
@@ -377,13 +362,13 @@ export function CoordinatorBoard({
               const c = t.current_candidate_id ? candById.get(t.current_candidate_id) : undefined;
               const free = t.status === "AVAILABLE";
               const interviewing = t.status === "INTERVIEWING";
-              const eligible = free && !!selectedValid && room.is_configured && !!t.department && selectedValid.department === t.department;
+              const eligible = free && !room.is_challenge && !!selectedValid && room.is_configured && !!t.department && selectedValid.department === t.department;
               const isOver = dragOverTable === t.id && eligible;
               return (
                 <div
                   key={t.id}
                   onDragOver={(e) => {
-                    if (!free || !room.is_configured || !t.department || (selectedValid && selectedValid.department !== t.department)) return;
+                    if (!free || room.is_challenge || !room.is_configured || !t.department || (selectedValid && selectedValid.department !== t.department)) return;
                     e.preventDefault();
                     e.dataTransfer.dropEffect = "move";
                     setDragOverTable(t.id);
@@ -392,16 +377,17 @@ export function CoordinatorBoard({
                   onDrop={(e) => {
                     e.preventDefault();
                     setDragOverTable(null);
+                    if (room.is_challenge) return;
                     const id = e.dataTransfer.getData("text/plain");
                     if (id) void assign(id, t);
                   }}
                   onClick={() => onTableClick(t)}
-                  role={free && (!selectedValid || eligible) ? "button" : undefined}
-                  tabIndex={free && (!selectedValid || eligible) ? 0 : undefined}
-                  aria-disabled={free && !!selectedValid && !eligible}
+                  role={free && !room.is_challenge && (!selectedValid || eligible) ? "button" : undefined}
+                  tabIndex={free && !room.is_challenge && (!selectedValid || eligible) ? 0 : undefined}
+                  aria-disabled={free && (room.is_challenge || (!!selectedValid && !eligible))}
                   onKeyDown={(e) => {
                     if (e.target !== e.currentTarget) return;
-                    if (free && (!selectedValid || eligible) && (e.key === "Enter" || e.key === " ")) {
+                    if (free && !room.is_challenge && (!selectedValid || eligible) && (e.key === "Enter" || e.key === " ")) {
                       e.preventDefault();
                       onTableClick(t);
                     }
@@ -413,7 +399,7 @@ export function CoordinatorBoard({
                       "cursor-pointer border-emerald-300 bg-emerald-50 hover:border-emerald-500 dark:border-emerald-800 dark:bg-emerald-950/50",
                     eligible && "animate-pulse-subtle border-emerald-500 ring-2 ring-emerald-500/30",
                     free && selectedValid && !eligible && "cursor-not-allowed border-muted bg-muted/30 opacity-55",
-                    free && (!room.is_configured || !t.department) && "cursor-not-allowed border-muted bg-muted/30 opacity-55",
+                    free && (!room.is_configured || !t.department || room.is_challenge) && "cursor-not-allowed border-muted bg-muted/30 opacity-55",
                     isOver && "scale-[1.02] border-emerald-600 ring-4 ring-emerald-500/30",
                     t.status === "ASSIGNED" && "border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/50",
                     interviewing && "border-red-300 bg-red-50 dark:border-red-800 dark:bg-red-950/50"
@@ -446,7 +432,7 @@ export function CoordinatorBoard({
 
                   {free ? (
                     <p className="mt-auto text-sm text-emerald-800/80 dark:text-emerald-200/80">
-                      {!room.is_configured ? "Phòng chưa kích hoạt" : !t.department ? "Admin cần chọn Ban" : selectedValid ? eligible ? "Bấm để gán" : "Khác Ban thí sinh" : "Sẵn sàng · kéo thả thí sinh vào đây"}
+                      {room.is_challenge ? "Phòng thử thách · Giám khảo tự nhận" : !room.is_configured ? "Phòng chưa kích hoạt" : !t.department ? "Admin cần chọn Ban" : selectedValid ? eligible ? "Bấm để gán" : "Khác Ban thí sinh" : "Sẵn sàng · kéo thả thí sinh vào đây"}
                     </p>
                   ) : (
                     <>
@@ -461,7 +447,7 @@ export function CoordinatorBoard({
                         >
                           <Elapsed since={interviewing ? t.started_at : t.assigned_at} />
                         </span>
-                        <Button
+                        {!room.is_challenge && <Button
                           size="xs"
                           variant="ghost"
                           onClick={(e) => {
@@ -471,7 +457,7 @@ export function CoordinatorBoard({
                           title="Trả thí sinh về hàng chờ và giải phóng bàn"
                         >
                           <Undo2 /> Trả về
-                        </Button>
+                        </Button>}
                       </div>
                     </>
                   )}
@@ -508,17 +494,7 @@ export function CoordinatorBoard({
       </AppHeader>
 
       <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-background px-4 py-2 text-sm">
-        <div className="flex items-center gap-2">
-          <span className="text-muted-foreground">TV hiển thị:</span>
-          <fieldset className="flex items-center gap-1" disabled={displayModeBusy}>
-            {([ ["NAME", "Họ tên"], ["CODE", "Mã số"] ] as const).map(([mode, label]) => (
-              <label key={mode} className={cn("cursor-pointer rounded-md border px-3 py-1.5 font-medium active:scale-[0.98]", (displaySettings.rows.find((row) => row.id === "main")?.identity_mode ?? "NAME") === mode ? "border-primary bg-primary text-primary-foreground" : "bg-background hover:bg-muted")}>
-                <input type="radio" name="display-mode" value={mode} checked={(displaySettings.rows.find((row) => row.id === "main")?.identity_mode ?? "NAME") === mode} onChange={() => void setDisplayMode(mode)} className="sr-only" />
-                {label}
-              </label>
-            ))}
-          </fieldset>
-        </div>
+        <p className="text-sm text-muted-foreground">Màn hình TV hiển thị họ tên thí sinh</p>
         <a href="/display" target="_blank" rel="noopener noreferrer" className="inline-flex min-h-9 items-center rounded-md border border-primary bg-primary px-4 font-semibold text-primary-foreground hover:bg-primary/90 active:scale-[0.98]">
           Mở màn hình chờ trên tab mới
         </a>

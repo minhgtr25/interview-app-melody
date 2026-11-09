@@ -25,6 +25,7 @@ export interface Room {
   building_code: import("@/lib/rooms").BuildingCode | null;
   room_number: import("@/lib/rooms").RoomNumber | null;
   is_configured: boolean;
+  is_challenge: boolean;
   sort_order: number;
 }
 
@@ -84,6 +85,8 @@ export interface Candidate {
   status: CandidateStatus;
   checked_in_at: string | null;
   table_id: string | null;
+  challenge_table_id: string | null;
+  challenge_status: "WAITING" | "ASSIGNED" | "INTERVIEWING" | "COMPLETED" | null;
   assigned_at: string | null;
   interview_started_at: string | null;
   interview_ended_at: string | null;
@@ -120,6 +123,15 @@ export interface Evaluation {
   started_at: string | null;
   ended_at: string | null;
   duration_seconds: number | null;
+  challenge_scores: Record<string, number>;
+  challenge_average_score: number | null;
+  challenge_comment: string | null;
+  challenge_interviewer_id: string | null;
+  challenge_interviewer_name: string | null;
+  challenge_table_label: string | null;
+  challenge_started_at: string | null;
+  challenge_ended_at: string | null;
+  challenge_duration_seconds: number | null;
   created_at: string;
 }
 
