@@ -18,18 +18,20 @@ import { Input } from "@/components/ui/input";
 import { DEPARTMENTS, isDepartmentCode, type DepartmentCode } from "@/lib/departments";
 import type { InterviewTable, Profile, Room } from "@/lib/types";
 import { createTableAccount, deleteAccount } from "@/app/admin/actions";
+import { SPECIALIZATIONS_BY_DEPARTMENT, isSpecializedDepartment, isSpecializationForDepartment, specializationLabel, type SpecializationCode } from "@/lib/specializations";
 
-type TableSetup = { department: DepartmentCode | ""; createAccount: boolean; judgeId: string };
+type TableSetup = { department: DepartmentCode | ""; specialization: SpecializationCode | ""; createAccount: boolean; judgeId: string };
 type RoomForm = {
   building: BuildingCode | "";
   number: string;
   count: 1 | 2 | 3 | 4;
   isChallenge: boolean;
+  externalChallenge: boolean;
   tables: TableSetup[];
 };
 
-const emptyTable = (): TableSetup => ({ department: "", createAccount: true, judgeId: "" });
-const emptyForm = (): RoomForm => ({ building: "", number: "", count: 2, isChallenge: false, tables: [emptyTable(), emptyTable(), emptyTable(), emptyTable()] });
+const emptyTable = (): TableSetup => ({ department: "", specialization: "", createAccount: true, judgeId: "" });
+const emptyForm = (): RoomForm => ({ building: "", number: "", count: 2, isChallenge: false, externalChallenge: false, tables: [emptyTable(), emptyTable(), emptyTable(), emptyTable()] });
 
 function RoomFields({ form, setForm, judges, disabled, prefix }: {
   form: RoomForm;
@@ -40,14 +42,20 @@ function RoomFields({ form, setForm, judges, disabled, prefix }: {
 }) {
   const selectedTables = form.tables.slice(0, form.count);
   const challengeDepartment = selectedTables[0]?.department;
-  const canConfigureChallenge = (challengeDepartment === "VH" || challengeDepartment === "HCTC") &&
+  const canConfigureExternalChallenge = challengeDepartment === "VH" &&
+    selectedTables.every((table) => table.department === challengeDepartment);
+  const canConfigureChallenge = challengeDepartment === "HCTC" &&
     selectedTables.every((table) => table.department === challengeDepartment);
   const changeTable = (index: number, patch: Partial<TableSetup>) => setForm({
     ...form,
-    tables: form.tables.map((table, i) => i === index ? { ...table, ...patch } : table),
-    ...(patch.department && form.isChallenge &&
-      (patch.department !== "VH" && patch.department !== "HCTC" || selectedTables.some((table, i) => i !== index && table.department !== patch.department))
-      ? { isChallenge: false } : {}),
+    tables: form.tables.map((table, i) => i === index ? {
+      ...table, ...patch,
+      ...(patch.department && !isSpecializationForDepartment(patch.department, table.specialization) ? { specialization: "" } : {}),
+    } : table),
+    ...(patch.department && selectedTables.some((table, i) => i !== index && table.department !== patch.department)
+      ? { isChallenge: false, externalChallenge: false }
+      : patch.department && patch.department !== "HCTC" ? { isChallenge: false }
+      : patch.department && patch.department !== "VH" ? { externalChallenge: false } : {}),
   });
   return <div className="space-y-4">
     <div className="space-y-1.5">
@@ -72,11 +80,17 @@ function RoomFields({ form, setForm, judges, disabled, prefix }: {
         </div>
       </fieldset>
     </div>
+    {canConfigureExternalChallenge && <label className="flex items-start gap-2 rounded-lg border border-violet-300 bg-violet-50 p-3 text-sm dark:border-violet-900 dark:bg-violet-950/30">
+      <input type="checkbox" checked={form.externalChallenge} disabled={disabled}
+        onChange={(event) => setForm({ ...form, externalChallenge: event.target.checked, isChallenge: false })} />
+      <span><span className="block font-semibold">Văn hoá · Phỏng vấn 2 vòng (thử thách ngoài phòng)</span>
+        <span className="text-muted-foreground">Không cần tạo phòng Debate. Sau vòng 1, bàn được giải phóng; Giám khảo theo dõi và xác nhận hoàn tất vòng 2 tại sidebar.</span></span>
+    </label>}
     {canConfigureChallenge && <label className="flex items-start gap-2 rounded-lg border border-violet-300 bg-violet-50 p-3 text-sm dark:border-violet-900 dark:bg-violet-950/30">
       <input type="checkbox" checked={form.isChallenge} disabled={disabled}
-        onChange={(event) => setForm({ ...form, isChallenge: event.target.checked })} />
-      <span><span className="block font-semibold">Phòng thử thách (Debate) · chỉ dành cho VH hoặc HCTC</span>
-        <span className="text-muted-foreground">Điều phối xem được nhưng không thể gán thí sinh; Giám khảo tự nhận từ hàng chờ thử thách.</span></span>
+        onChange={(event) => setForm({ ...form, isChallenge: event.target.checked, externalChallenge: false })} />
+      <span><span className="block font-semibold">HCTC · Phòng Debate cho vòng thử thách</span>
+        <span className="text-muted-foreground">Tạo tài khoản riêng cho Giám khảo Debate. Điều phối chỉ theo dõi; Giám khảo Debate nhận và chốt thí sinh.</span></span>
     </label>}
     {form.building && isRoomNumber(form.number) && <p className="text-sm font-semibold">Mã phòng: {roomCode(form.building, form.number)}</p>}
     <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
@@ -84,6 +98,13 @@ function RoomFields({ form, setForm, judges, disabled, prefix }: {
         <p className="font-semibold">Bàn {index + 1}</p>
         <DepartmentRadio name={`${prefix}-table-${index}`} value={table.department}
           onChange={(department) => changeTable(index, { department })} disabled={disabled} />
+        {isSpecializedDepartment(table.department) && <label className="grid gap-1.5 text-sm font-medium">Ngạch phụ trách bàn
+          <select className="h-9 rounded-lg border border-input bg-background px-3 text-sm" value={table.specialization} disabled={disabled}
+            onChange={(event) => changeTable(index, { specialization: event.target.value as SpecializationCode | "" })}>
+            <option value="">Chọn ngạch</option>
+            {(table.department === "CM" ? SPECIALIZATIONS_BY_DEPARTMENT.CM : SPECIALIZATIONS_BY_DEPARTMENT.TT).map((item) => <option key={item.code} value={item.code}>{item.name}</option>)}
+          </select>
+        </label>}
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={table.createAccount} disabled={disabled}
             onChange={(event) => changeTable(index, { createAccount: event.target.checked, judgeId: "" })} />
@@ -115,9 +136,11 @@ function ExistingRoom({ room, tables, profiles, busy, onSave, onDelete }: {
     building: room.building_code ?? "",
     number: room.room_number ?? "",
     count: sorted.length >= 1 && sorted.length <= 4 ? sorted.length as 1 | 2 | 3 | 4 : 2,
-    isChallenge: room.is_challenge,
+    isChallenge: room.is_challenge && sorted[0]?.department === "HCTC",
+    externalChallenge: room.external_challenge ?? (room.is_challenge && sorted[0]?.department === "VH"),
     tables: [0, 1, 2, 3].map((index) => ({
       department: sorted[index]?.department ?? "",
+      specialization: sorted[index]?.specialization ?? "",
       createAccount: !profiles.some((profile) => profile.role === "INTERVIEWER" && profile.table_id === sorted[index]?.id),
       judgeId: profiles.find((profile) => profile.role === "INTERVIEWER" && profile.table_id === sorted[index]?.id)?.id ?? "",
     })),
@@ -138,7 +161,7 @@ function ExistingRoom({ room, tables, profiles, busy, onSave, onDelete }: {
     {!editing ? <>
       <ul className="space-y-1 text-sm">
         {sorted.map((table) => <li key={table.id} className="flex justify-between gap-2 rounded-lg border px-3 py-2">
-          <span>{table.name} ({table.department ?? "Chưa chọn Ban"})</span>
+          <span>{table.name} ({table.department ?? "Chưa chọn Ban"}{table.specialization ? ` · ${specializationLabel(table.specialization)}` : ""})</span>
           <span className="text-muted-foreground">{profiles.find((profile) => profile.role === "INTERVIEWER" && profile.table_id === table.id)?.full_name || "Chưa có tài khoản đại diện"}</span>
         </li>)}
       </ul>
@@ -174,8 +197,14 @@ export function RoomsManager({ rooms, tables, profiles }: { rooms: Room[]; table
     const selected = form.tables.slice(0, form.count);
     if (selected.some((table) => !isDepartmentCode(table.department) || (!table.createAccount && !table.judgeId)))
       return toast.error("Mỗi bàn cần Ban và một tài khoản đại diện");
-    if (form.isChallenge && (selected.some((table) => table.department !== selected[0]?.department) || !["VH", "HCTC"].includes(selected[0]?.department ?? "")))
-      return toast.error("Phòng thử thách chỉ dùng một Ban duy nhất là VH hoặc HCTC");
+    if (selected.some((table) => isSpecializedDepartment(table.department)
+      ? !isSpecializationForDepartment(table.department, table.specialization)
+      : !!table.specialization))
+      return toast.error("Chọn ngạch phù hợp cho từng bàn thuộc Chuyên Môn hoặc Truyền Thông");
+    if (form.isChallenge && selected.some((table) => table.department !== "HCTC"))
+      return toast.error("Phòng Debate chỉ dùng riêng cho Ban HCTC");
+    if (form.externalChallenge && selected.some((table) => table.department !== "VH"))
+      return toast.error("Chế độ thử thách ngoài phòng chỉ dùng cho Ban Văn hoá");
     const existingIds = selected.filter((table) => !table.createAccount).map((table) => table.judgeId);
     if (new Set(existingIds).size !== existingIds.length)
       return toast.error("Một tài khoản đại diện chỉ được gán cho một bàn");
@@ -187,11 +216,11 @@ export function RoomsManager({ rooms, tables, profiles }: { rooms: Room[]; table
       const existingDeskChanged = currentTables.some((table, index) => {
         const setup = selected[index];
         const judge = profiles.find((profile) => profile.role === "INTERVIEWER" && profile.table_id === table.id);
-        return !setup || setup.department !== table.department || setup.createAccount || setup.judgeId !== judge?.id;
+        return !setup || setup.department !== table.department || setup.specialization !== table.specialization || setup.createAccount || setup.judgeId !== judge?.id;
       });
       if (!existing || selected.length <= currentTables.length ||
         form.building !== existing.building_code || form.number !== existing.room_number ||
-        form.isChallenge !== existing.is_challenge || existingDeskChanged) {
+        form.isChallenge !== existing.is_challenge || form.externalChallenge !== (existing.external_challenge ?? false) || existingDeskChanged) {
         return toast.error("Phòng đang có bàn bận: chỉ có thể tăng số bàn và giữ nguyên thông tin phòng, Ban, tài khoản của các bàn hiện tại.");
       }
     }
@@ -210,12 +239,14 @@ export function RoomsManager({ rooms, tables, profiles }: { rooms: Room[]; table
       if (existing && !addOnlyWhileOccupied) {
         const { error } = await supabase.from("rooms").update({
           building_code: form.building, room_number: form.number, is_configured: false, is_challenge: form.isChallenge,
+          external_challenge: form.externalChallenge,
         }).eq("id", existing.id);
         if (error) throw error;
       } else if (!existing) {
         const { data, error } = await supabase.from("rooms").insert({
           name: roomCode(form.building, form.number), building_code: form.building,
           room_number: form.number, is_configured: false, is_challenge: form.isChallenge,
+          external_challenge: form.externalChallenge,
           sort_order: (rooms.at(-1)?.sort_order ?? 0) + 1,
         }).select("id").single();
         if (error || !data) throw error ?? new Error("Không tạo được phòng");
@@ -227,7 +258,7 @@ export function RoomsManager({ rooms, tables, profiles }: { rooms: Room[]; table
       const resultIds: string[] = addOnlyWhileOccupied ? currentTables.map((table) => table.id) : [];
       const firstDeskToProcess = addOnlyWhileOccupied ? currentTables.length : 0;
       for (let index = firstDeskToProcess; index < form.count; index++) {
-        const values = { name: `Bàn ${index + 1}`, sort_order: index + 1, department: selected[index].department };
+        const values = { name: `Bàn ${index + 1}`, sort_order: index + 1, department: selected[index].department, specialization: selected[index].specialization || null };
         if (currentTables[index]) {
           const { error } = await supabase.from("tables").update(values).eq("id", currentTables[index].id);
           if (error) throw error;
@@ -292,7 +323,7 @@ export function RoomsManager({ rooms, tables, profiles }: { rooms: Room[]; table
   return <div className="space-y-6">
     <div>
       <h2 className="text-lg font-semibold">Cấu hình Phòng & Bàn phỏng vấn</h2>
-      <p className="text-sm text-muted-foreground">Chọn Tòa, Số phòng, từ 1 đến 4 bàn, Ban và một tài khoản đại diện cho từng bàn rồi kích hoạt. Nhiều giám khảo có thể dùng chung máy của bàn; không cần cấp tài khoản riêng cho từng người.</p>
+      <p className="text-sm text-muted-foreground">Chọn Tòa, Số phòng, từ 1 đến 4 bàn, rồi chọn Ban và ngạch riêng cho từng bàn trước khi kích hoạt. Nhiều giám khảo có thể dùng chung máy của bàn; không cần cấp tài khoản riêng cho từng người.</p>
     </div>
 
     <section className="space-y-4 rounded-xl border bg-card p-4">

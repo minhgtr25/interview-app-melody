@@ -18,7 +18,7 @@ import { groupCandidateApplications } from "@/components/candidate-applications"
 import { cn } from "@/lib/utils";
 
 export function OperationsBoard({ role, staffName, initialCandidates, initialEvaluations, initialTables, initialRooms, criteria }: {
-  role: "ADMIN" | "COORDINATOR";
+  role: "ADMIN" | "SUPPORT_IT" | "COORDINATOR";
   staffName: string;
   initialCandidates: Candidate[];
   initialEvaluations: Evaluation[];
@@ -90,7 +90,7 @@ export function OperationsBoard({ role, staffName, initialCandidates, initialEva
 
   return <div className="min-h-dvh bg-muted/30">
     <AppHeader title="Tra cứu thí sinh & quản lý bàn" subtitle={staffName} status={status}>
-      <Link className={buttonVariants({ variant: "outline", size: "sm" })} href={role === "ADMIN" ? "/admin" : "/coordinator"}><ArrowLeft /> Quay lại</Link>
+      <Link className={buttonVariants({ variant: "outline", size: "sm" })} href={role === "COORDINATOR" || role === "SUPPORT_IT" ? "/coordinator" : "/admin"}><ArrowLeft /> Quay lại</Link>
     </AppHeader>
 
     <main className="mx-auto max-w-screen-2xl space-y-5 px-4 py-5">
@@ -159,7 +159,7 @@ export function OperationsBoard({ role, staffName, initialCandidates, initialEva
                 <div className="flex items-start justify-between gap-2">
                   <div><p className="font-semibold">{table.name}</p><p className="text-sm text-muted-foreground">Ban {table.department || "chưa chọn"}</p></div>
                   <span className={cn("rounded-full px-2 py-1 text-xs font-medium",
-                    table.status === "AVAILABLE" ? "bg-emerald-100 text-emerald-800" : table.status === "ASSIGNED" ? "bg-amber-100 text-amber-800" : "bg-red-100 text-red-800")}>{table.status === "AVAILABLE" ? "Trống" : table.status === "ASSIGNED" ? "Chờ vào bàn" : "Đang phỏng vấn"}</span>
+                    table.is_paused ? "bg-amber-100 text-amber-900" : table.status === "AVAILABLE" ? "bg-emerald-100 text-emerald-800" : table.status === "ASSIGNED" ? "bg-amber-100 text-amber-800" : "bg-red-100 text-red-800")}>{table.is_paused ? table.status === "AVAILABLE" ? "Tạm dừng tiếp nhận" : `${table.status === "ASSIGNED" ? "Chờ vào bàn" : "Đang phỏng vấn"} · Tạm dừng nhận mới` : table.status === "AVAILABLE" ? "Trống" : table.status === "ASSIGNED" ? "Chờ vào bàn" : "Đang phỏng vấn"}</span>
                 </div>
                 <p className="mt-4 text-sm">{current ? `Hiện tại: ${current.full_name}` : "Chưa có thí sinh tại bàn"}</p>
                 <p className="mt-2 flex items-center gap-1 text-sm font-medium text-primary"><ClipboardList className="size-4" /> Đã phỏng vấn: {history.length} người</p>

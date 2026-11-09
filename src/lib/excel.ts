@@ -1,5 +1,6 @@
 import * as XLSX from "xlsx";
 import { normalizeDepartment } from "@/lib/departments";
+import { isSpecializationForDepartment, specializationLabel } from "@/lib/specializations";
 import { formatDateTime, formatDuration, normalizePhone, normalizeText, safeUrl } from "@/lib/format";
 import { GENDERS, normalizeGender, normalizeStudentNumber } from "@/lib/personal-info";
 import {
@@ -9,7 +10,7 @@ import {
   type RubricCriterion,
 } from "@/lib/types";
 
-export type CandidateField = "full_name" | "student_number" | "student_cohort" | "gender" | "phone" | "email" | "facebook_url" | "department";
+export type CandidateField = "full_name" | "student_number" | "student_cohort" | "gender" | "phone" | "email" | "facebook_url" | "department" | "specialization";
 
 export const FIELD_LABEL: Record<CandidateField, string> = {
   full_name: "Họ tên",
@@ -20,6 +21,7 @@ export const FIELD_LABEL: Record<CandidateField, string> = {
   email: "Email",
   facebook_url: "Link Facebook",
   department: "Ban ứng tuyển",
+  specialization: "Ngạch",
 };
 
 /** Các tên cột thường gặp (đã bỏ dấu, lowercase) để tự động map. */
@@ -32,6 +34,7 @@ const ALIASES: Record<CandidateField, string[]> = {
   email: ["email", "e-mail", "mail", "gmail", "dia chi email"],
   facebook_url: ["link facebook", "facebook", "fb url"],
   department: ["ban dang ky ban nao", "ban ung tuyen", "ban dang ky", "department", "team"],
+  specialization: ["ngach", "nhanh", "media design content", "hat nhac cu rap", "chuyen mon nhanh", "truyen thong nhanh", "specialization"],
 };
 
 /** Trả về field phù hợp cho từng header (null nếu không nhận ra). Ưu tiên khớp chính xác, rồi khớp chứa. */
@@ -100,7 +103,7 @@ export function applyMapping(sheet: ParsedSheet, mapping: (CandidateField | null
   const errors: { row: number; message: string }[] = [];
   const invalidStudentRows: number[] = [];
   sheet.rows.forEach((r, i) => {
-    const rec: MappedCandidate = { full_name: null, student_number: null, student_cohort: null, gender: null, phone: null, email: null, facebook_url: null, department: null };
+    const rec: MappedCandidate = { full_name: null, student_number: null, student_cohort: null, gender: null, phone: null, email: null, facebook_url: null, department: null, specialization: null };
     mapping.forEach((field, col) => {
       if (!field) return;
       const v = String(r[col] ?? "").trim();
@@ -119,9 +122,16 @@ export function applyMapping(sheet: ParsedSheet, mapping: (CandidateField | null
     const gender = normalizeGender(rec.gender);
     if (!gender) return errors.push({ row: rowNo, message: "Thiếu Giới tính hoặc giá trị không hợp lệ" });
     rec.gender = gender;
+    const legacyDesign = ["DE", "DESIGN", "BAN DESIGN"].includes((rec.department ?? "").trim().toUpperCase());
     const department = normalizeDepartment(rec.department);
-    if (!department) return errors.push({ row: rowNo, message: "Thiếu Ban hoặc Ban không thuộc CM, VH, TT, ND, DE, HCTC" });
+    if (!department) return errors.push({ row: rowNo, message: "Thiếu Ban hoặc Ban không thuộc CM, VH, TT, ND, HCTC" });
     rec.department = department;
+    if (!rec.specialization && legacyDesign) rec.specialization = "DESIGN";
+    if (rec.specialization) {
+      const code = normalizeText(rec.specialization).toUpperCase().replace(/\s+/g, "_");
+      if (!isSpecializationForDepartment(department, code)) return errors.push({ row: rowNo, message: "Ngạch không hợp lệ hoặc không khớp Ban" });
+      rec.specialization = code;
+    }
     if (rec.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rec.email)) return errors.push({ row: rowNo, message: "Email không hợp lệ" });
     if (rec.facebook_url && !safeUrl(rec.facebook_url)) return errors.push({ row: rowNo, message: "Link Facebook không hợp lệ" });
     valid.push(rec);
@@ -153,12 +163,12 @@ export function applyMapping(sheet: ParsedSheet, mapping: (CandidateField | null
 
 /** File mẫu để Admin điền danh sách. */
 export function downloadTemplate() {
-  const fields: CandidateField[] = ["student_number", "full_name", "student_cohort", "gender", "phone", "email", "facebook_url", "department"];
+  const fields: CandidateField[] = ["student_number", "full_name", "student_cohort", "gender", "phone", "email", "facebook_url", "department", "specialization"];
   const ws = XLSX.utils.aoa_to_sheet([
     fields.map((field) => FIELD_LABEL[field]),
-    ["HE123456", "Nguyễn Văn A", "K22", "Nam", "0901234567", "a.nguyen@example.com", "https://facebook.com/example", "Ban Truyền Thông"],
+    ["HE123456", "Nguyễn Văn A", "K22", "Nam", "0901234567", "a.nguyen@example.com", "https://facebook.com/example", "Ban Truyền Thông", "Media"],
   ]);
-  ws["!cols"] = [14, 24, 14, 12, 14, 28, 40, 24].map((wch) => ({ wch }));
+  ws["!cols"] = [14, 24, 14, 12, 14, 28, 40, 24, 18].map((wch) => ({ wch }));
   // Cột SĐT định dạng Text để Excel không làm mất số 0
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Thi sinh");
@@ -184,7 +194,7 @@ export function exportResults(
   const crit = [...criteria].sort((a, b) => a.sort_order - b.sort_order);
 
   const header = [
-    "Mã ứng viên", "MSSV", "MSSV cần xác minh", "Lượt phỏng vấn", "Họ tên", "Khóa", "Giới tính", "SĐT", "Email", "Facebook", "Ban ứng tuyển", "Ca phỏng vấn", "Trạng thái",
+    "Mã ứng viên", "MSSV", "MSSV cần xác minh", "Lượt phỏng vấn", "Họ tên", "Khóa", "Giới tính", "SĐT", "Email", "Facebook", "Ban ứng tuyển", "Ngạch", "Ca phỏng vấn", "Trạng thái",
     ...crit.map((c) => `${c.name} (/${c.max_score})`),
     "Điểm TB (/10)", "Nhận xét", "Thời lượng (mm:ss)", "Người chấm", "Phòng - Bàn",
     ...crit.map((c) => `Thử thách · ${c.name} (/${c.max_score})`),
@@ -205,7 +215,7 @@ export function exportResults(
     return [
       c.code, c.student_number ?? source?.student_number ?? "", c.student_number_raw ?? "", source ? `Lượt 2 từ ${source.code}` : "Lượt 1", c.full_name, c.student_cohort ?? "",
       GENDERS.find((gender) => gender.code === c.gender)?.name ?? "", c.phone ?? "", c.email ?? "",
-      c.facebook_url ?? "", c.department ?? "", c.shift ?? "", STATUS_LABEL[c.status],
+      c.facebook_url ?? "", c.department ?? "", specializationLabel(c.specialization) ?? "", c.shift ?? "", STATUS_LABEL[c.status],
       ...crit.map((k) => (e?.scores?.[k.id] != null ? Number(e.scores[k.id]) : "")),
       e?.average_score != null ? Number(e.average_score) : "",
       e?.comment ?? "",

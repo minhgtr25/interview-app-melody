@@ -3,7 +3,6 @@ export const DEPARTMENTS = [
   { code: "VH", name: "Văn Hóa" },
   { code: "TT", name: "Truyền Thông" },
   { code: "ND", name: "Nội Dung" },
-  { code: "DE", name: "Design" },
   { code: "HCTC", name: "Hậu Cần - Thiết Công" },
 ] as const;
 
@@ -18,7 +17,7 @@ export function normalizeDepartment(value: string | null | undefined): Departmen
   if (isDepartmentCode(normalized)) return normalized;
   const aliases: Record<string, DepartmentCode> = {
     "CHUYÊN MÔN": "CM", "VĂN HÓA": "VH", "VĂN HOÁ": "VH", "TRUYỀN THÔNG": "TT",
-    DESIGN: "DE", "HẬU CẦN - THIẾT CÔNG": "HCTC",
+    DE: "TT", DESIGN: "TT", "BAN DESIGN": "TT", "HẬU CẦN - THIẾT CÔNG": "HCTC",
     "BAN CHUYÊN MÔN": "CM", "BAN VĂN HÓA": "VH", "BAN TRUYỀN THÔNG": "TT",
     "BAN HẬU CẦN - THIẾT CÔNG": "HCTC", "BAN NỘI DUNG": "ND",
     "NỘI DUNG": "ND",

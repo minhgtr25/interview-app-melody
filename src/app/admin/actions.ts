@@ -6,17 +6,18 @@ import { createClient, createServiceClient, getSessionProfile } from "@/lib/supa
 import type { UserRole } from "@/lib/types";
 import { normalizeDepartment } from "@/lib/departments";
 import { normalizeGender, normalizeStudentNumber } from "@/lib/personal-info";
+import { isSpecializationForDepartment } from "@/lib/specializations";
 
 export type ActionResult<T = undefined> = { ok: true; data?: T } | { ok: false; error: string };
 
-const ROLES: UserRole[] = ["ADMIN", "CHECKIN", "COORDINATOR", "INTERVIEWER"];
+const ROLES: UserRole[] = ["ADMIN", "SUPPORT_IT", "CHECKIN", "COORDINATOR", "INTERVIEWER"];
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /** Mọi server action admin phải qua đây: xác thực lại phía server, không tin client. */
 async function assertAdmin() {
   const session = await getSessionProfile();
-  if (!session?.profile || session.profile.role !== "ADMIN") {
-    throw new Error("Chỉ Admin mới được thực hiện thao tác này");
+  if (!session?.profile || !["ADMIN", "SUPPORT_IT"].includes(session.profile.role)) {
+    throw new Error("Chỉ Admin hoặc Support IT mới được thực hiện thao tác này");
   }
   return session.profile;
 }
@@ -130,7 +131,7 @@ export async function updateAccount(input: {
   try {
     const me = await assertAdmin();
     if (!ROLES.includes(input.role)) throw new Error("Vai trò không hợp lệ");
-    if (input.id === me.id && input.role !== "ADMIN") {
+    if (input.id === me.id && !["ADMIN", "SUPPORT_IT"].includes(input.role)) {
       throw new Error("Không thể tự hạ quyền Admin của chính mình");
     }
     const admin = createServiceClient();
@@ -189,6 +190,7 @@ export type CandidateInput = {
   phone: string | null;
   email: string | null;
   department: string | null;
+  specialization: string | null;
   shift: string | null;
   cv_url: string | null;
 };
@@ -204,7 +206,9 @@ function cleanCandidate(c: CandidateInput): CandidateInput {
   if (!name) throw new Error(`Thiếu họ tên (mã ${code})`);
   const department = t(c.department, 120);
   const normalizedDepartment = normalizeDepartment(department);
-  if (!normalizedDepartment) throw new Error(`Ban không hợp lệ (mã ${code}). Chọn CM, VH, TT, ND, DE hoặc HCTC`);
+  const specialization = t(c.specialization, 32) ?? (department && /^(DE|DESIGN|BAN DESIGN)$/i.test(department) ? "DESIGN" : null);
+  if (specialization && !isSpecializationForDepartment(normalizedDepartment, specialization)) throw new Error("Ngạch không khớp với Ban ứng tuyển");
+  if (!normalizedDepartment) throw new Error(`Ban không hợp lệ (mã ${code}). Chọn CM, VH, TT, ND hoặc HCTC`);
   const rawStudentNumber = t(c.student_number, 32);
   const studentNumber = rawStudentNumber ? normalizeStudentNumber(rawStudentNumber) : null;
   if (rawStudentNumber && !studentNumber) throw new Error(`MSSV phải gồm đúng 8 chữ hoặc số (mã ${code})`);
@@ -222,6 +226,7 @@ function cleanCandidate(c: CandidateInput): CandidateInput {
     phone: t(c.phone, 32),
     email: t(c.email, 200)?.toLowerCase() ?? null,
     department: normalizedDepartment,
+    specialization,
     shift: t(c.shift, 120),
     cv_url: t(c.cv_url, 2000),
   };
@@ -236,6 +241,7 @@ export type FormCandidateInput = {
   email: string | null;
   facebook_url: string | null;
   department: string;
+  specialization?: string | null;
 };
 
 export async function importSchedules(rows: { student_number: string | null; email: string | null; shift: string }[]): Promise<ActionResult<{ count: number }>> {
@@ -273,6 +279,7 @@ export async function importCandidates(rows: FormCandidateInput[]): Promise<Acti
       const studentNumber = normalizeStudentNumber(row.student_number);
       const gender = normalizeGender(row.gender);
       const department = normalizeDepartment(row.department);
+      const specialization = row.specialization?.trim().toUpperCase() || (/^(DE|DESIGN|BAN DESIGN)$/i.test(row.department) ? "DESIGN" : null);
       const name = row.full_name?.trim();
       const identity = studentNumber ?? (row.email ? `EMAIL:${row.email.trim().toLowerCase()}` : null);
       if (!identity) throw new Error("MSSV chưa hợp lệ và thiếu Email để đối chiếu");
@@ -282,6 +289,7 @@ export async function importCandidates(rows: FormCandidateInput[]): Promise<Acti
       if (!name || name.length > 200) throw new Error(`Họ tên không hợp lệ (${identity})`);
       if (!gender) throw new Error(`Giới tính không hợp lệ (${identity})`);
       if (!department) throw new Error(`Ban không hợp lệ (${identity})`);
+      if (specialization && !isSpecializationForDepartment(department, specialization)) throw new Error(`Ngạch không khớp Ban (${identity})`);
       return {
         student_number: studentNumber ?? row.student_number.trim().toUpperCase(),
         full_name: name,
@@ -291,6 +299,7 @@ export async function importCandidates(rows: FormCandidateInput[]): Promise<Acti
         email: row.email?.trim().toLowerCase() || null,
         facebook_url: row.facebook_url?.trim() || null,
         department,
+        specialization,
       };
     });
     const supabase = await createClient();

@@ -58,7 +58,7 @@ export function ImportDialog({ onDone }: { onDone: () => void }) {
       result.valid.map((v) => ({
         student_number: v.student_number!, full_name: v.full_name!, student_cohort: v.student_cohort,
         gender: v.gender!, phone: v.phone, email: v.email, facebook_url: v.facebook_url,
-        department: v.department!,
+        department: v.department!, specialization: v.specialization,
       }))
     );
     setBusy(false);

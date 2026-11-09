@@ -8,6 +8,7 @@ export async function requireRole(roles: UserRole[]): Promise<Profile> {
   const session = await getSessionProfile();
   if (!session) redirect("/login");
   if (!session.profile) redirect("/login?error=no-profile");
-  if (!roles.includes(session.profile.role)) redirect(ROLE_HOME[session.profile.role]);
+  const hasRole = roles.includes(session.profile.role) || (session.profile.role === "SUPPORT_IT" && roles.includes("ADMIN"));
+  if (!hasRole) redirect(ROLE_HOME[session.profile.role]);
   return session.profile;
 }

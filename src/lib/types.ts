@@ -1,4 +1,4 @@
-export type UserRole = "ADMIN" | "CHECKIN" | "COORDINATOR" | "INTERVIEWER";
+export type UserRole = "ADMIN" | "SUPPORT_IT" | "CHECKIN" | "COORDINATOR" | "INTERVIEWER";
 
 export type CandidateStatus =
   | "NOT_ARRIVED"
@@ -26,6 +26,7 @@ export interface Room {
   room_number: import("@/lib/rooms").RoomNumber | null;
   is_configured: boolean;
   is_challenge: boolean;
+  external_challenge: boolean;
   sort_order: number;
 }
 
@@ -34,8 +35,10 @@ export interface InterviewTable {
   room_id: string;
   name: string;
   department: import("@/lib/departments").DepartmentCode | null;
+  specialization: import("@/lib/specializations").SpecializationCode | null;
   sort_order: number;
   status: TableStatus;
+  is_paused: boolean;
   current_candidate_id: string | null;
   assigned_at: string | null;
   started_at: string | null;
@@ -47,6 +50,7 @@ export interface OpsMessage {
   table_id: string;
   candidate_id: string | null;
   sender_id: string | null;
+  sender_label: string | null;
   kind: "CHAT" | "ALARM";
   body: string;
   created_at: string;
@@ -80,6 +84,7 @@ export interface Candidate {
   phone: string | null;
   email: string | null;
   department: string | null;
+  specialization: import("@/lib/specializations").SpecializationCode | null;
   shift: string | null;
   source_candidate_id: string | null;
   cv_url: string | null;
@@ -88,6 +93,7 @@ export interface Candidate {
   table_id: string | null;
   challenge_table_id: string | null;
   challenge_status: "WAITING" | "ASSIGNED" | "INTERVIEWING" | "COMPLETED" | null;
+  challenge_started_at: string | null;
   assigned_at: string | null;
   interview_started_at: string | null;
   interview_ended_at: string | null;
@@ -170,6 +176,7 @@ export interface ReviewDecisionEvent {
 
 export const ROLE_LABEL: Record<UserRole, string> = {
   ADMIN: "Quản trị (BTC)",
+  SUPPORT_IT: "Support IT",
   CHECKIN: "Check-in",
   COORDINATOR: "Điều phối",
   INTERVIEWER: "Giám khảo",
@@ -177,6 +184,7 @@ export const ROLE_LABEL: Record<UserRole, string> = {
 
 export const ROLE_HOME: Record<UserRole, string> = {
   ADMIN: "/admin",
+  SUPPORT_IT: "/admin",
   CHECKIN: "/checkin",
   COORDINATOR: "/coordinator",
   INTERVIEWER: "/interviewer",

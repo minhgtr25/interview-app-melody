@@ -20,7 +20,7 @@ function mergeMessages(previous: OpsMessage[], incoming: OpsMessage[]) {
 export function OpsChat({ tableId, selfId, role, candidateId }: {
   tableId: string;
   selfId: string;
-  role: "interviewer" | "coordinator";
+  role: "interviewer" | "coordinator" | "support";
   candidateId?: string;
 }) {
   const [messages, setMessages] = useState<OpsMessage[]>([]);
@@ -92,7 +92,9 @@ export function OpsChat({ tableId, selfId, role, candidateId }: {
       {!loading && !loadError && messages.length === 0 && <p className="py-12 text-center text-sm text-muted-foreground">Chưa có tin nhắn.</p>}
       {messages.map((message) => {
         const mine = message.sender_id === selfId;
-        const label = message.kind === "ALARM" ? "Alarm" : mine ? "Bạn" : candidateId ? "Giám khảo bàn còn lại" : role === "interviewer" ? "Điều phối" : "Giám khảo";
+        const fallback = mine ? role === "interviewer" ? "Giám khảo" : role === "support" ? "Support IT" : "Điều phối"
+          : role === "interviewer" ? candidateId ? "Giám khảo" : "Điều phối" : "Giám khảo";
+        const label = message.kind === "ALARM" ? "Alarm" : message.sender_label || fallback;
         return <div key={message.id} className={cn("max-w-[90%] rounded-lg border bg-background px-3 py-2 text-sm", mine && "ml-auto border-primary/40 bg-primary/5")}>
           <div className="mb-1 flex justify-between gap-3 text-xs text-muted-foreground">
             <span className="font-semibold">{label}</span>

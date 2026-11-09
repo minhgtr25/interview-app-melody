@@ -17,7 +17,7 @@ export default async function OperationsPage() {
     fetchAll<RubricCriterion>(supabase, "rubric_criteria", "sort_order"),
   ]);
   return <OperationsBoard
-    role={profile.role as "ADMIN" | "COORDINATOR"}
+    role={profile.role as "ADMIN" | "SUPPORT_IT" | "COORDINATOR"}
     staffName={profile.full_name || profile.email}
     initialCandidates={candidates}
     initialEvaluations={evaluations}

@@ -27,9 +27,10 @@ import { type DepartmentCode, isDepartmentCode } from "@/lib/departments";
 import { DEPARTMENTS } from "@/lib/departments";
 import { GENDERS } from "@/lib/personal-info";
 import { groupCandidateApplications } from "@/components/candidate-applications";
+import { SPECIALIZATIONS_BY_DEPARTMENT, isSpecializedDepartment, specializationLabel, type SpecializationCode } from "@/lib/specializations";
 
 const SELECT_CLS = "h-9 rounded-lg border border-input bg-background px-3 text-sm";
-const EMPTY: CandidateInput = { code: "", full_name: "", student_number: "", student_cohort: "", gender: "", facebook_url: "", phone: "", email: "", department: "", shift: "", cv_url: "" };
+const EMPTY: CandidateInput = { code: "", full_name: "", student_number: "", student_cohort: "", gender: "", facebook_url: "", phone: "", email: "", department: "", specialization: "", shift: "", cv_url: "" };
 
 type Confirm =
   | { kind: "reset" | "delete"; c: Candidate }
@@ -145,7 +146,7 @@ export function CandidatesManager({
           id: c.id,
           data: { code: c.code, full_name: c.full_name, student_number: c.student_number ?? "", student_number_raw: c.student_number_raw,
             student_cohort: c.student_cohort ?? "", gender: c.gender ?? "", facebook_url: c.facebook_url ?? "",
-            phone: c.phone ?? "", email: c.email ?? "", department: c.department ?? "", shift: c.shift ?? "", cv_url: c.cv_url ?? "" },
+            phone: c.phone ?? "", email: c.email ?? "", department: c.department ?? "", specialization: c.specialization ?? "", shift: c.shift ?? "", cv_url: c.cv_url ?? "" },
         })}><Pencil /></Button>
       <Button size="icon-sm" variant="ghost" title="Đưa về Chưa đến" aria-label={`Đặt lại ${c.full_name}`}
         disabled={c.status === "NOT_ARRIVED"} onClick={() => setConfirm({ kind: "reset", c })}><RotateCcw /></Button>
@@ -227,7 +228,7 @@ export function CandidatesManager({
                     <p className="break-words font-semibold">{c.full_name}{c.source_candidate_id && <span className="ml-1.5 inline-block rounded bg-violet-100 px-1.5 py-0.5 align-middle text-[10px] font-semibold text-violet-800">Lượt 2</span>}</p>
                     <p className="mt-1 truncate font-mono text-xs text-muted-foreground">{c.code} · MSSV {c.student_number || c.student_number_raw || "—"}</p>
                   </TableCell>
-                  <TableCell className="whitespace-normal text-sm">{group?.departments.join(" · ") || c.department || "—"}</TableCell>
+                  <TableCell className="whitespace-normal text-sm">{group?.departments.join(" · ") || c.department || "—"}{c.specialization ? <span className="mt-0.5 block text-xs text-muted-foreground">{specializationLabel(c.specialization)}</span> : isSpecializedDepartment(c.department) && <span className="mt-0.5 block text-xs font-medium text-amber-700">Chưa chọn ngạch</span>}</TableCell>
                   <TableCell className="whitespace-normal">{renderStatus(c)}</TableCell>
                   <TableCell className="text-right tabular-nums">
                     <span className="font-semibold">{e?.average_score != null ? Number(e.average_score).toFixed(2) : "—"}</span>
@@ -262,7 +263,7 @@ export function CandidatesManager({
                 {renderActions(c)}
               </div>
               <div className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-t pt-3 text-sm">
-                <p><span className="text-xs text-muted-foreground">Ban </span><span className="font-medium">{group?.departments.join(" · ") || c.department || "—"}</span></p>
+                <p><span className="text-xs text-muted-foreground">Ban </span><span className="font-medium">{group?.departments.join(" · ") || c.department || "—"}{c.specialization ? ` · ${specializationLabel(c.specialization)}` : isSpecializedDepartment(c.department) ? " · Chưa chọn ngạch" : ""}</span></p>
                 <p className="text-right"><span className="font-semibold tabular-nums">{e?.average_score != null ? Number(e.average_score).toFixed(2) : "—"}</span>{c.duration_seconds != null && <span className="ml-2 text-xs text-muted-foreground">{formatDuration(c.duration_seconds)}</span>}</p>
               </div>
               <div className="mt-2">{renderStatus(c)}</div>
@@ -310,8 +311,16 @@ export function CandidatesManager({
               <div className="grid gap-1.5 sm:col-span-2">
                 <Label>Ban ứng tuyển</Label>
                 <DepartmentRadio name="candidate-department" value={isDepartmentCode(editing.data.department) ? editing.data.department : ""}
-                  onChange={(department) => setEditing({ ...editing, data: { ...editing.data, department } })} />
+                  onChange={(department) => setEditing({ ...editing, data: { ...editing.data, department, specialization: "" } })} />
               </div>
+              {isSpecializedDepartment(editing.data.department) && <div className="grid gap-1.5 sm:col-span-2">
+                <Label htmlFor="candidate-specialization">Ngạch · {editing.data.department === "CM" ? "Chuyên Môn" : "Truyền Thông"}</Label>
+                <select id="candidate-specialization" className={SELECT_CLS} value={editing.data.specialization ?? ""}
+                  onChange={(event) => setEditing({ ...editing, data: { ...editing.data, specialization: event.target.value as SpecializationCode | "" } })}>
+                  <option value="">Chưa phân ngạch</option>
+                  {(editing.data.department === "CM" ? SPECIALIZATIONS_BY_DEPARTMENT.CM : SPECIALIZATIONS_BY_DEPARTMENT.TT).map((item) => <option key={item.code} value={item.code}>{item.name}</option>)}
+                </select>
+              </div>}
             </div>
           )}
           <DialogFooter>
@@ -344,7 +353,7 @@ export function CandidatesManager({
                 <dl className="grid grid-cols-2 gap-2 text-xs">
                   <dt className="text-muted-foreground">Check-in</dt><dd>{formatDateTime(viewing.checked_in_at) || "—"}</dd>
                   <dt className="text-muted-foreground">MSSV</dt><dd className="font-mono">{viewing.student_number || viewing.student_number_raw || "—"}{viewing.student_number_raw && " (cần xác minh)"}</dd>
-                  <dt className="text-muted-foreground">Ban · Ca</dt><dd>{groupByCandidate.get(viewing.id)?.departments.join(" · ") || viewing.department || "—"}<br />{groupByCandidate.get(viewing.id)?.shifts.join(" ; ") || viewing.shift || "—"}</dd>
+                  <dt className="text-muted-foreground">Ban · Ngạch · Ca</dt><dd>{groupByCandidate.get(viewing.id)?.departments.join(" · ") || viewing.department || "—"} · {specializationLabel(viewing.specialization) || (isSpecializedDepartment(viewing.department) ? "Chưa chọn ngạch" : "—")}<br />{groupByCandidate.get(viewing.id)?.shifts.join(" ; ") || viewing.shift || "—"}</dd>
                   <dt className="text-muted-foreground">Khóa · Giới tính</dt><dd>{[viewing.student_cohort, GENDERS.find((gender) => gender.code === viewing.gender)?.name].filter(Boolean).join(" · ") || "—"}</dd>
                   <dt className="text-muted-foreground">Email</dt><dd className="break-all">{viewing.email || "—"}</dd>
                   <dt className="text-muted-foreground">SĐT</dt><dd>{viewing.phone || "—"}</dd>

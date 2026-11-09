@@ -10,7 +10,7 @@ type Result<T = undefined> = { ok: true; data?: T } | { ok: false; error: string
 
 async function requireAdmin() {
   const session = await getSessionProfile();
-  if (session?.profile?.role !== "ADMIN") throw new Error("Chỉ Admin được quản lý link chấm kết quả");
+  if (!session?.profile || !["ADMIN", "SUPPORT_IT"].includes(session.profile.role)) throw new Error("Chỉ Admin hoặc Support IT được quản lý link chấm kết quả");
 }
 
 export async function openReviewPortal(value: string): Promise<Result<{ department: DepartmentCode; code: string }>> {

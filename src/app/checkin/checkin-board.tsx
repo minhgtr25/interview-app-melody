@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition, useDeferredValue } from "react";
 import { toast } from "sonner";
-import { Check, Search, Undo2, UserX, Loader2, Phone, Hash, Plus } from "lucide-react";
+import { Check, Search, Undo2, UserX, Loader2, Phone, Hash, Plus, Pencil } from "lucide-react";
 import { AppHeader } from "@/components/app-header";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
@@ -20,12 +20,13 @@ import { DepartmentRadio } from "@/components/department-radio";
 import { type DepartmentCode } from "@/lib/departments";
 import { GENDERS, type GenderCode, normalizeStudentNumber } from "@/lib/personal-info";
 import { groupCandidateApplications } from "@/components/candidate-applications";
+import { SPECIALIZATIONS_BY_DEPARTMENT, isSpecializedDepartment, specializationLabel, type SpecializationCode } from "@/lib/specializations";
 
 const NATIVE_SELECT =
   "h-10 rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50";
 
-type WalkInForm = { code: string; fullName: string; studentNumber: string; studentCohort: string; gender: GenderCode | ""; facebookUrl: string; department: DepartmentCode | ""; phone: string; email: string };
-const emptyWalkIn = (): WalkInForm => ({ code: "", fullName: "", studentNumber: "", studentCohort: "", gender: "", facebookUrl: "", department: "", phone: "", email: "" });
+type WalkInForm = { code: string; fullName: string; studentNumber: string; studentCohort: string; gender: GenderCode | ""; facebookUrl: string; department: DepartmentCode | ""; specialization: SpecializationCode | ""; phone: string; email: string };
+const emptyWalkIn = (): WalkInForm => ({ code: "", fullName: "", studentNumber: "", studentCohort: "", gender: "", facebookUrl: "", department: "", specialization: "", phone: "", email: "" });
 
 function haptic() {
   try {
@@ -51,6 +52,7 @@ export function CheckinBoard({
   const [absenceManager, setAbsenceManager] = useState(false);
   const [absenceCandidate, setAbsenceCandidate] = useState<Candidate | null>(null);
   const [absenceNote, setAbsenceNote] = useState("");
+  const [absenceDialogMode, setAbsenceDialogMode] = useState<"MARK" | "EDIT">("MARK");
   const [savingAbsence, setSavingAbsence] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [flashId, setFlashId] = useState<string | null>(null);
@@ -136,6 +138,13 @@ export function CheckinBoard({
   const undo = (c: Candidate) =>
     run(c, "undo_check_in", { status: "NOT_ARRIVED", checked_in_at: null }, `Đã hoàn tác: ${c.full_name}`);
   function openAbsenceNote(c: Candidate) {
+    setAbsenceDialogMode("MARK");
+    setAbsenceCandidate(c);
+    setAbsenceNote(c.absent_note ?? "");
+  }
+
+  function openEditAbsenceNote(c: Candidate) {
+    setAbsenceDialogMode("EDIT");
     setAbsenceCandidate(c);
     setAbsenceNote(c.absent_note ?? "");
   }
@@ -146,22 +155,31 @@ export function CheckinBoard({
     const candidate = absenceCandidate;
     setSavingAbsence(true);
     setBusyId(candidate.id);
-    const markedAt = new Date().toISOString();
     const note = absenceNote.trim().slice(0, 2000);
-    const { error } = await createClient().rpc("mark_absent_with_note", {
-      p_candidate_id: candidate.id,
-      p_note: note || null,
-    });
+    const { error } = absenceDialogMode === "EDIT"
+      ? await createClient().rpc("update_absent_note", {
+          p_candidate_id: candidate.id,
+          p_note: note || null,
+        })
+      : await createClient().rpc("mark_absent_with_note", {
+          p_candidate_id: candidate.id,
+          p_note: note || null,
+        });
     setSavingAbsence(false);
     setBusyId(null);
     if (error) {
       toast.error(error.code === "PGRST202" || error.code === "42703"
-        ? "Database chưa có chức năng ghi chú vắng mặt. Admin cần chạy migration 20261112_absence_notes.sql."
+        ? "Database chưa có chức năng sửa ghi chú vắng mặt. Admin cần chạy migration 20261113_edit_absence_notes.sql."
         : errorMessage(error));
       return;
     }
-    patchRow(candidate.id, { status: "ABSENT", absent_at: markedAt, absent_note: note || null });
-    toast.success(`Đã đánh vắng: ${candidate.full_name}`);
+    if (absenceDialogMode === "EDIT") {
+      patchRow(candidate.id, { absent_note: note || null });
+      toast.success(`Đã cập nhật ghi chú: ${candidate.full_name}`);
+    } else {
+      patchRow(candidate.id, { status: "ABSENT", absent_at: new Date().toISOString(), absent_note: note || null });
+      toast.success(`Đã đánh vắng: ${candidate.full_name}`);
+    }
     setAbsenceCandidate(null);
     setAbsenceNote("");
   }
@@ -169,7 +187,8 @@ export function CheckinBoard({
   async function addWalkIn(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (addingWalkIn) return;
-    if (!walkIn.code.trim() || !walkIn.fullName.trim() || !walkIn.department || !walkIn.gender || !normalizeStudentNumber(walkIn.studentNumber)) {
+    if (!walkIn.code.trim() || !walkIn.fullName.trim() || !walkIn.department || !walkIn.gender || !normalizeStudentNumber(walkIn.studentNumber) ||
+      (isSpecializedDepartment(walkIn.department) && !walkIn.specialization)) {
       toast.error("Nhập mã ứng viên, MSSV 8 ký tự, họ tên, Giới tính và Ban");
       return;
     }
@@ -185,6 +204,7 @@ export function CheckinBoard({
       p_student_cohort: walkIn.studentCohort.trim() || null,
       p_gender: walkIn.gender,
       p_facebook_url: walkIn.facebookUrl.trim() || null,
+      p_specialization: walkIn.specialization || null,
     });
     setAddingWalkIn(false);
     if (error) {
@@ -331,7 +351,7 @@ export function CheckinBoard({
                   <TableCell className="font-mono text-xs">{c.student_number || "—"}</TableCell>
                   <TableCell className="font-medium">{c.full_name}</TableCell>
                   <TableCell className="tabular-nums">{c.phone}</TableCell>
-                  <TableCell>{groupByCandidate.get(c.id)?.departments.join(" · ") || c.department}</TableCell>
+                  <TableCell>{groupByCandidate.get(c.id)?.departments.join(" · ") || c.department}{c.specialization && <span className="block text-xs text-muted-foreground">{specializationLabel(c.specialization)}</span>}</TableCell>
                   <TableCell>{groupByCandidate.get(c.id)?.shifts.join(" ; ") || c.shift}</TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
@@ -342,7 +362,18 @@ export function CheckinBoard({
                     </div>
                   </TableCell>
                   <TableCell className="max-w-64 whitespace-normal text-sm">
-                    {c.status === "ABSENT" ? c.absent_note || "Chưa có ghi chú" : "—"}
+                    {c.status === "ABSENT" ? (
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="whitespace-pre-wrap">{c.absent_note || "Chưa có ghi chú"}</span>
+                        {absenceManager && (
+                          <Button variant="ghost" size="icon" className="-mt-1 size-8 shrink-0"
+                            onClick={() => openEditAbsenceNote(c)} disabled={busyId === c.id}
+                            aria-label="Sửa ghi chú vắng mặt" title="Sửa ghi chú vắng mặt">
+                            <Pencil />
+                          </Button>
+                        )}
+                      </div>
+                    ) : "—"}
                   </TableCell>
                   <TableCell>
                     <div className="flex justify-end gap-2">
@@ -395,12 +426,16 @@ export function CheckinBoard({
                     )}
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    {[groupByCandidate.get(c.id)?.departments.join(" · ") || c.department, groupByCandidate.get(c.id)?.shifts.join(" ; ") || c.shift].filter(Boolean).join(" · ")}
+                    {[groupByCandidate.get(c.id)?.departments.join(" · ") || c.department, specializationLabel(c.specialization), groupByCandidate.get(c.id)?.shifts.join(" ; ") || c.shift].filter(Boolean).join(" · ")}
                   </p>
                   {c.status === "ABSENT" && <div className="mt-3 rounded-lg bg-amber-50 p-3 text-sm dark:bg-amber-950/30">
                     <p className="text-xs font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-200">Ghi chú vắng mặt</p>
                     <p className="mt-1 whitespace-pre-wrap break-words">{c.absent_note || "Chưa có ghi chú"}</p>
                     {c.absent_at && <time className="mt-2 block text-xs text-muted-foreground">Ghi nhận lúc {formatTime(c.absent_at)}</time>}
+                    {absenceManager && <Button variant="outline" size="sm" className="mt-3"
+                      onClick={() => openEditAbsenceNote(c)} disabled={busyId === c.id}>
+                      <Pencil /> Sửa ghi chú
+                    </Button>}
                   </div>}
                 </div>
                 <StatusBadge status={c.status} />
@@ -476,8 +511,16 @@ export function CheckinBoard({
             <div className="grid gap-1.5">
               <Label>Ban ứng tuyển *</Label>
               <DepartmentRadio name="walkin-department" value={walkIn.department}
-                onChange={(department) => setWalkIn({ ...walkIn, department })} disabled={addingWalkIn} />
+                onChange={(department) => setWalkIn({ ...walkIn, department, specialization: "" })} disabled={addingWalkIn} />
             </div>
+            {isSpecializedDepartment(walkIn.department) && <div className="grid gap-1.5">
+              <Label htmlFor="walkin-specialization">Ngạch *</Label>
+              <select id="walkin-specialization" className={NATIVE_SELECT} required value={walkIn.specialization} disabled={addingWalkIn}
+                onChange={(event) => setWalkIn({ ...walkIn, specialization: event.target.value as SpecializationCode | "" })}>
+                <option value="">Chọn ngạch</option>
+                {(walkIn.department === "CM" ? SPECIALIZATIONS_BY_DEPARTMENT.CM : SPECIALIZATIONS_BY_DEPARTMENT.TT).map((item) => <option key={item.code} value={item.code}>{item.name}</option>)}
+              </select>
+            </div>}
             <DialogFooter>
               <Button type="button" variant="outline" disabled={addingWalkIn} onClick={() => setWalkInOpen(false)}>Hủy</Button>
               <Button type="submit" disabled={addingWalkIn}>{addingWalkIn && <Loader2 className="animate-spin" />} Thêm và check-in</Button>
@@ -490,8 +533,10 @@ export function CheckinBoard({
       }}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Đánh vắng · {absenceCandidate?.full_name}</DialogTitle>
-            <DialogDescription>Ghi lại lý do hoặc thông tin liên hệ để đội Check-in và Điều phối theo dõi.</DialogDescription>
+            <DialogTitle>{absenceDialogMode === "EDIT" ? "Sửa ghi chú vắng" : "Đánh vắng"} · {absenceCandidate?.full_name}</DialogTitle>
+            <DialogDescription>{absenceDialogMode === "EDIT"
+              ? "Cập nhật ghi chú cho trường hợp đã vắng. Trạng thái và thời điểm báo vắng được giữ nguyên."
+              : "Ghi lại lý do hoặc thông tin liên hệ để đội Check-in và Điều phối theo dõi."}</DialogDescription>
           </DialogHeader>
           <form onSubmit={saveAbsence} className="grid gap-4">
             <div className="grid gap-1.5">
@@ -504,8 +549,8 @@ export function CheckinBoard({
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" disabled={savingAbsence} onClick={() => setAbsenceCandidate(null)}>Hủy</Button>
-              <Button type="submit" variant="destructive" disabled={savingAbsence}>
-                {savingAbsence && <Loader2 className="animate-spin" />} Xác nhận vắng mặt
+              <Button type="submit" variant={absenceDialogMode === "EDIT" ? "default" : "destructive"} disabled={savingAbsence}>
+                {savingAbsence && <Loader2 className="animate-spin" />} {absenceDialogMode === "EDIT" ? "Lưu ghi chú" : "Xác nhận vắng mặt"}
               </Button>
             </DialogFooter>
           </form>
