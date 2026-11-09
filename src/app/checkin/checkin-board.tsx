@@ -212,15 +212,15 @@ export function CheckinBoard({
 
   return (
     <div className="min-h-dvh bg-muted/30">
-      <AppHeader title="Bàn tiếp đón · Check-in" subtitle={staffName} status={status}>
-        <span className="hidden rounded-full bg-muted px-3 py-1 text-xs font-medium tabular-nums md:inline">
+      <AppHeader title="Bàn tiếp đón · Check-in" mobileTitle="Check-in" subtitle={staffName} status={status}>
+        <span className="hidden rounded-full bg-muted px-3 py-1 text-xs font-medium tabular-nums lg:inline">
           Đã đến {counts.arrived}/{counts.total}
         </span>
       </AppHeader>
 
       {/* Thanh tìm kiếm + lọc: sticky dưới header */}
       <div className="sticky top-14 z-20 border-b bg-background/95 backdrop-blur">
-        <div className="mx-auto flex max-w-screen-2xl flex-col gap-2 px-4 py-3 md:flex-row md:items-center">
+        <div className="mx-auto flex max-w-screen-2xl flex-col gap-2 px-3 py-3 sm:px-4 2xl:flex-row 2xl:items-center">
           <div className="relative flex-1">
             <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -230,19 +230,17 @@ export function CheckinBoard({
               className="h-11 pl-9 text-base md:h-10 md:text-sm"
               type="search"
               enterKeyHint="search"
-              autoFocus
             />
           </div>
-          <div className="grid grid-cols-3 gap-2 md:flex">
-            <select className={NATIVE_SELECT} value={shift} onChange={(e) => setShift(e.target.value)} aria-label="Lọc theo ca">
+          <div className="grid min-w-0 grid-cols-2 gap-2 md:grid-cols-3 2xl:flex">
+            <select className={cn(NATIVE_SELECT, "w-full min-w-0")} value={shift} onChange={(e) => setShift(e.target.value)} aria-label="Lọc theo ca">
               <option value="">Tất cả ca</option>
               {shifts.map((s) => (
                 <option key={s} value={s}>{s}</option>
               ))}
             </select>
-            <div className="col-span-3"><DepartmentRadio name="checkin-department" value={dept} onChange={setDept} allowAll /></div>
             <select
-              className={NATIVE_SELECT}
+              className={cn(NATIVE_SELECT, "w-full min-w-0")}
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value as CandidateStatus | "")}
               aria-label="Lọc theo trạng thái"
@@ -252,19 +250,20 @@ export function CheckinBoard({
                 <option key={s} value={s}>{STATUS_LABEL[s]}</option>
               ))}
             </select>
+            <div className="col-span-2 min-w-0 md:col-span-3"><DepartmentRadio name="checkin-department" value={dept} onChange={setDept} allowAll /></div>
           </div>
         </div>
       </div>
 
-      <main className="mx-auto max-w-screen-2xl px-4 py-4">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <p className="text-sm text-muted-foreground">{filtered.length} thí sinh</p>
-          <Button onClick={() => setWalkInOpen(true)}><Plus /> Thêm thí sinh bổ sung</Button>
+      <main className="mx-auto max-w-screen-2xl px-3 py-4 sm:px-4">
+        <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-muted-foreground">{filtered.length} thí sinh · Đã đến {counts.arrived}/{counts.total}</p>
+          <Button className="w-full sm:w-auto" onClick={() => setWalkInOpen(true)}><Plus /> Thêm thí sinh bổ sung</Button>
         </div>
 
-        {/* Desktop: bảng */}
-        <div className="hidden overflow-hidden rounded-xl border bg-card md:block">
-          <Table>
+        {/* Large screens: table; mobile and iPad: responsive cards */}
+        <div className="hidden overflow-x-auto rounded-xl border bg-card xl:block">
+          <Table className="min-w-[1024px]">
             <TableHeader>
               <TableRow>
                 <TableHead className="w-28">Mã</TableHead>
@@ -327,8 +326,8 @@ export function CheckinBoard({
           </Table>
         </div>
 
-        {/* Mobile: thẻ */}
-        <ul className="grid gap-3 md:hidden">
+        {/* Cards fit phones and tablet screens without horizontal scrolling */}
+        <ul className="grid gap-3 md:grid-cols-2 xl:hidden">
           {filtered.map((c) => (
             <li
               key={c.id}
@@ -339,7 +338,7 @@ export function CheckinBoard({
             >
               <div className="mb-3 flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="truncate text-base font-semibold">{c.full_name}</p>
+                  <p className="break-words text-base font-semibold">{c.full_name}</p>
                   <p className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                     <span className="inline-flex items-center gap-1 font-mono"><Hash className="size-3" />{c.code}</span>
                     {c.student_number && <span className="font-mono">MSSV {c.student_number}</span>}
@@ -363,7 +362,7 @@ export function CheckinBoard({
       </main>
 
       <Dialog open={walkInOpen} onOpenChange={(open) => { if (!addingWalkIn) setWalkInOpen(open); }}>
-        <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg">
+        <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-xl md:max-w-2xl">
           <DialogHeader>
             <DialogTitle>Thêm thí sinh tại bàn Check-in</DialogTitle>
             <DialogDescription>Thí sinh được check-in ngay và chuyển vào hàng chờ Điều phối. Hệ thống tự lưu tài khoản đã thêm để Admin kiểm tra.</DialogDescription>
