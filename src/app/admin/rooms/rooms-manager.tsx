@@ -122,6 +122,7 @@ function ExistingRoom({ room, tables, profiles, busy, onSave, onDelete }: {
       judgeId: profiles.find((profile) => profile.role === "INTERVIEWER" && profile.table_id === sorted[index]?.id)?.id ?? "",
     })),
   }));
+  const hasOccupiedTables = tables.some((table) => table.status !== "AVAILABLE");
   const roomTableIds = new Set(tables.map((table) => table.id));
   const availableJudges = profiles.filter((profile) => profile.role === "INTERVIEWER" &&
     (!profile.table_id || roomTableIds.has(profile.table_id)));
@@ -143,6 +144,9 @@ function ExistingRoom({ room, tables, profiles, busy, onSave, onDelete }: {
       </ul>
       <Button variant="outline" onClick={() => setEditing(true)} disabled={busy}>Cấu hình phòng</Button>
     </> : <>
+      {hasOccupiedTables && <p className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
+        Phòng đang có bàn phỏng vấn. Bạn vẫn có thể tăng số bàn; thông tin và tài khoản các bàn hiện tại sẽ được giữ nguyên.
+      </p>}
       <RoomFields form={form} setForm={setForm} judges={availableJudges} disabled={busy} prefix={`room-${room.id}`} />
       <div className="flex gap-2">
         <Button onClick={() => void onSave(room, form)} disabled={busy}>
@@ -177,8 +181,20 @@ export function RoomsManager({ rooms, tables, profiles }: { rooms: Room[]; table
       return toast.error("Một tài khoản đại diện chỉ được gán cho một bàn");
     const currentTables = existing ? tables.filter((table) => table.room_id === existing.id)
       .sort((a, b) => a.sort_order - b.sort_order) : [];
-    if (currentTables.some((table) => table.status !== "AVAILABLE"))
-      return toast.error("Chỉ sửa phòng khi mọi bàn đã trống");
+    const occupiedTables = currentTables.filter((table) => table.status !== "AVAILABLE");
+    const addOnlyWhileOccupied = occupiedTables.length > 0;
+    if (addOnlyWhileOccupied) {
+      const existingDeskChanged = currentTables.some((table, index) => {
+        const setup = selected[index];
+        const judge = profiles.find((profile) => profile.role === "INTERVIEWER" && profile.table_id === table.id);
+        return !setup || setup.department !== table.department || setup.createAccount || setup.judgeId !== judge?.id;
+      });
+      if (!existing || selected.length <= currentTables.length ||
+        form.building !== existing.building_code || form.number !== existing.room_number ||
+        form.isChallenge !== existing.is_challenge || existingDeskChanged) {
+        return toast.error("Phòng đang có bàn bận: chỉ có thể tăng số bàn và giữ nguyên thông tin phòng, Ban, tài khoản của các bàn hiện tại.");
+      }
+    }
     const currentIds = new Set(currentTables.map((table) => table.id));
     if (selected.some((table) => !table.createAccount && !judges.some((judge) => judge.id === table.judgeId &&
       (!judge.table_id || currentIds.has(judge.table_id)))))
@@ -191,12 +207,12 @@ export function RoomsManager({ rooms, tables, profiles }: { rooms: Room[]; table
     const generatedIds: string[] = [];
     const credentials: { table: string; email: string; password: string }[] = [];
     try {
-      if (existing) {
+      if (existing && !addOnlyWhileOccupied) {
         const { error } = await supabase.from("rooms").update({
           building_code: form.building, room_number: form.number, is_configured: false, is_challenge: form.isChallenge,
         }).eq("id", existing.id);
         if (error) throw error;
-      } else {
+      } else if (!existing) {
         const { data, error } = await supabase.from("rooms").insert({
           name: roomCode(form.building, form.number), building_code: form.building,
           room_number: form.number, is_configured: false, is_challenge: form.isChallenge,
@@ -208,8 +224,9 @@ export function RoomsManager({ rooms, tables, profiles }: { rooms: Room[]; table
       }
       if (!roomId) throw new Error("Không tìm thấy phòng");
 
-      const resultIds: string[] = [];
-      for (let index = 0; index < form.count; index++) {
+      const resultIds: string[] = addOnlyWhileOccupied ? currentTables.map((table) => table.id) : [];
+      const firstDeskToProcess = addOnlyWhileOccupied ? currentTables.length : 0;
+      for (let index = firstDeskToProcess; index < form.count; index++) {
         const values = { name: `Bàn ${index + 1}`, sort_order: index + 1, department: selected[index].department };
         if (currentTables[index]) {
           const { error } = await supabase.from("tables").update(values).eq("id", currentTables[index].id);
@@ -225,12 +242,12 @@ export function RoomsManager({ rooms, tables, profiles }: { rooms: Room[]; table
         const { error } = await supabase.from("tables").delete().in("id", currentTables.slice(form.count).map((table) => table.id));
         if (error) throw error;
       }
-      if (currentTables.length) {
+      if (currentTables.length && !addOnlyWhileOccupied) {
         const { error } = await supabase.from("profiles").update({ table_id: null })
           .in("table_id", currentTables.map((table) => table.id));
         if (error) throw error;
       }
-      for (let index = 0; index < form.count; index++) {
+      for (let index = firstDeskToProcess; index < form.count; index++) {
         if (selected[index].createAccount) {
           const account = await createTableAccount(resultIds[index]);
           if (!account.ok || !account.data) throw new Error(account.ok ? "Không tạo được tài khoản" : account.error);
