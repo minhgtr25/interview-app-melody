@@ -8,13 +8,14 @@ import { cn } from "@/lib/utils";
 
 export function LiveIndicator({ status }: { status: RealtimeStatus }) {
   const map = {
-    live: { icon: Wifi, text: "Realtime", cls: "text-emerald-700 bg-emerald-50 dark:bg-emerald-950 dark:text-emerald-300" },
+    live: { icon: Wifi, text: "Đang đồng bộ", cls: "text-emerald-700 bg-emerald-50 dark:bg-emerald-950 dark:text-emerald-300" },
     connecting: { icon: Loader2, text: "Đang kết nối", cls: "text-amber-700 bg-amber-50 dark:bg-amber-950 dark:text-amber-300" },
     offline: { icon: WifiOff, text: "Mất kết nối", cls: "text-red-700 bg-red-50 dark:bg-red-950 dark:text-red-300" },
   }[status];
   const Icon = map.icon;
   return (
-    <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium", map.cls)}>
+    <span role="status" aria-live="polite" aria-label={map.text} title={map.text}
+      className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium", map.cls)}>
       <Icon className={cn("size-3.5", status === "connecting" && "animate-spin")} />
       <span className="hidden sm:inline">{map.text}</span>
     </span>

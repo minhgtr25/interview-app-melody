@@ -27,12 +27,14 @@ export default async function InterviewerPage() {
   }
 
   const supabase = await createClient();
-  const [tables, candidates, rooms, rubric, evaluations] = await Promise.all([
+  await supabase.rpc("ensure_interview_day");
+  const [tables, candidates, rooms, rubric, evaluations, dayState] = await Promise.all([
     fetchAll<InterviewTable>(supabase, "tables", "sort_order"),
     fetchAll<Candidate>(supabase, "candidates"),
     fetchAll<Room>(supabase, "rooms", "sort_order"),
     fetchAll<RubricCriterion>(supabase, "rubric_criteria", "sort_order"),
     fetchAll<Evaluation>(supabase, "evaluations"),
+    supabase.from("interview_day_state").select("day").eq("id", "main").maybeSingle(),
   ]);
 
   return (
@@ -46,6 +48,7 @@ export default async function InterviewerPage() {
         rubric={rubric.filter((r) => r.active)}
         interviewerName={name}
         selfId={profile.id}
+        activeDay={dayState.data?.day ?? null}
       />
     </ClockProvider>
   );

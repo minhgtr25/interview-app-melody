@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Copy, KeyRound, Loader2, Pencil, Plus, Trash2, Wand2, AlertTriangle } from "lucide-react";
+import { Copy, KeyRound, Loader2, Pencil, Plus, Trash2, Wand2, AlertTriangle, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,7 +15,8 @@ import {
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { ROLE_LABEL, type InterviewTable, type Profile, type Room, type UserRole } from "@/lib/types";
-import { createAccount, deleteAccount, resetPassword, updateAccount } from "../actions";
+import { normalizeText } from "@/lib/format";
+import { createAccount, deleteAccount, deleteAllInterviewerAccounts, resetPassword, updateAccount } from "../actions";
 
 const SELECT_CLS = "h-9 w-full rounded-lg border border-input bg-background px-3 text-sm";
 const ROLES = Object.keys(ROLE_LABEL) as UserRole[];
@@ -26,6 +27,12 @@ function genPassword(len = 12) {
   const arr = new Uint32Array(len);
   crypto.getRandomValues(arr);
   return Array.from(arr, (n) => chars[n % chars.length]).join("");
+}
+
+function tableAccountEmail(roomName: string, tableName: string) {
+  const localPart = `${roomName}-${tableName}`.normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  return `${localPart}@club.local`;
 }
 
 type Form = { id: string | null; email: string; password: string; fullName: string; role: UserRole; tableId: string };
@@ -47,13 +54,21 @@ export function AccountsManager({
   const [form, setForm] = useState<Form | null>(null);
   const [pwFor, setPwFor] = useState<{ p: Profile; pw: string } | null>(null);
   const [delFor, setDelFor] = useState<Profile | null>(null);
+  const [deleteAllOpen, setDeleteAllOpen] = useState(false);
   const [created, setCreated] = useState<{ email: string; password: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [query, setQuery] = useState("");
+  const [roleFilter, setRoleFilter] = useState<UserRole | "">("");
 
   const tableLabel = useMemo(() => {
     const rn = new Map(rooms.map((r) => [r.id, r]));
     return new Map(tables.map((t) => [t.id, `${rn.get(t.room_id)?.name ?? ""} · ${t.name} (${t.department ?? "Chưa chọn Ban"})`]));
   }, [tables, rooms]);
+  const tableEmail = (tableId: string) => {
+    const table = tables.find((item) => item.id === tableId);
+    const room = rooms.find((item) => item.id === table?.room_id);
+    return table && room ? tableAccountEmail(room.name, table.name) : "";
+  };
 
   const tableOptions = useMemo(() => {
     const order = new Map(rooms.map((r) => [r.id, r.sort_order]));
@@ -68,17 +83,22 @@ export function AccountsManager({
   }, [profiles]);
   const uncovered = tables.filter((t) => !judgesPerTable.get(t.id));
 
-  const sorted = [...profiles].sort((a, b) => ROLES.indexOf(a.role) - ROLES.indexOf(b.role) || a.email.localeCompare(b.email));
+  const sorted = profiles.filter((profile) => {
+    if (roleFilter && profile.role !== roleFilter) return false;
+    return !query || normalizeText(`${profile.full_name} ${profile.email} ${ROLE_LABEL[profile.role]} ${tableLabel.get(profile.table_id ?? "") ?? ""}`).includes(normalizeText(query));
+  }).sort((a, b) => ROLES.indexOf(a.role) - ROLES.indexOf(b.role) || a.email.localeCompare(b.email));
 
   async function save() {
     if (!form) return;
+    if (!form.id && form.role === "INTERVIEWER" && !form.tableId) return toast.error("Chọn bàn để tạo tài khoản Giám khảo");
+    if (!form.id && form.role === "INTERVIEWER" && form.password.length !== 8) return toast.error("Mật khẩu Giám khảo phải đúng 8 ký tự");
     setBusy(true);
     const res = form.id
       ? await updateAccount({ id: form.id, fullName: form.fullName, role: form.role, tableId: form.tableId || null })
       : await createAccount({ email: form.email, password: form.password, fullName: form.fullName, role: form.role, tableId: form.tableId || null });
     setBusy(false);
     if (!res.ok) return toast.error(res.error);
-    if (!form.id) setCreated({ email: form.email.trim().toLowerCase(), password: form.password });
+    if (!form.id) setCreated({ email: res.data?.email ?? form.email.trim().toLowerCase(), password: res.data?.password ?? form.password });
     toast.success(form.id ? "Đã cập nhật tài khoản" : "Đã tạo tài khoản");
     setForm(null);
     router.refresh();
@@ -105,6 +125,18 @@ export function AccountsManager({
     router.refresh();
   }
 
+  async function doDeleteAllInterviewers() {
+    setBusy(true);
+    const res = await deleteAllInterviewerAccounts();
+    setBusy(false);
+    if (!res.ok) return toast.error(res.error);
+    const { deleted, failed } = res.data ?? { deleted: 0, failed: 0 };
+    if (failed) toast.error(`Đã xóa ${deleted} tài khoản; ${failed} tài khoản chưa xóa được`);
+    else toast.success(deleted ? `Đã xóa ${deleted} tài khoản Giám khảo` : "Không có tài khoản Giám khảo nào để xóa");
+    setDeleteAllOpen(false);
+    router.refresh();
+  }
+
   function copy(text: string) {
     navigator.clipboard?.writeText(text).then(() => toast.success("Đã sao chép"), () => toast.error("Không sao chép được"));
   }
@@ -117,9 +149,13 @@ export function AccountsManager({
         </h2>
         <Button
           disabled={!serviceKeyConfigured}
-          onClick={() => setForm({ id: null, email: "", password: genPassword(), fullName: "", role: "INTERVIEWER", tableId: "" })}
+          onClick={() => setForm({ id: null, email: "", password: genPassword(8), fullName: "", role: "INTERVIEWER", tableId: "" })}
         >
           <Plus /> Cấp tài khoản
+        </Button>
+        <Button variant="destructive" disabled={!serviceKeyConfigured || !profiles.some((profile) => profile.role === "INTERVIEWER")}
+          onClick={() => setDeleteAllOpen(true)}>
+          <Trash2 /> Xóa toàn bộ Giám khảo ({profiles.filter((profile) => profile.role === "INTERVIEWER").length})
         </Button>
       </div>
 
@@ -135,6 +171,21 @@ export function AccountsManager({
           Bàn chưa có tài khoản đại diện: {uncovered.map((t) => tableLabel.get(t.id)).join(", ")}
         </p>
       )}
+
+      <div className="flex flex-col gap-2 rounded-xl border bg-card p-3 sm:flex-row">
+        <div className="relative min-w-0 flex-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input type="search" value={query} onChange={(event) => setQuery(event.target.value)}
+            placeholder="Tìm tên, email, vai trò hoặc phòng/bàn" className="pl-9 pr-9" aria-label="Tìm tài khoản" />
+          {query && <Button type="button" variant="ghost" size="icon-xs" className="absolute right-2 top-1/2 -translate-y-1/2"
+            aria-label="Xóa nội dung tìm kiếm" onClick={() => setQuery("")}><X /></Button>}
+        </div>
+        <select className={SELECT_CLS + " sm:w-52"} value={roleFilter} onChange={(event) => setRoleFilter(event.target.value as UserRole | "")} aria-label="Lọc theo vai trò">
+          <option value="">Tất cả vai trò</option>
+          {ROLES.map((role) => <option key={role} value={role}>{ROLE_LABEL[role]}</option>)}
+        </select>
+      </div>
+      <p className="text-xs text-muted-foreground" aria-live="polite">Hiển thị {sorted.length}/{profiles.length} tài khoản</p>
 
       <div className="overflow-x-auto rounded-xl border bg-card">
         <Table>
@@ -166,7 +217,7 @@ export function AccountsManager({
                       <Pencil />
                     </Button>
                     <Button size="icon-sm" variant="ghost" title="Đặt lại mật khẩu" aria-label="Đặt lại mật khẩu"
-                      disabled={!serviceKeyConfigured} onClick={() => setPwFor({ p, pw: genPassword() })}>
+                      disabled={!serviceKeyConfigured} onClick={() => setPwFor({ p, pw: genPassword(p.role === "INTERVIEWER" ? 8 : 12) })}>
                       <KeyRound />
                     </Button>
                     <Button size="icon-sm" variant="ghost" title="Xoá" aria-label="Xoá" className="text-red-600"
@@ -177,6 +228,9 @@ export function AccountsManager({
                 </TableCell>
               </TableRow>
             ))}
+            {sorted.length === 0 && <TableRow><TableCell colSpan={5} className="py-10 text-center text-sm text-muted-foreground">
+              {profiles.length ? "Không tìm thấy tài khoản phù hợp." : "Chưa có tài khoản nhân sự."}
+            </TableCell></TableRow>}
           </TableBody>
         </Table>
       </div>
@@ -196,16 +250,16 @@ export function AccountsManager({
               </div>
               <div className="grid gap-1.5">
                 <Label htmlFor="a-email">Email đăng nhập</Label>
-                <Input id="a-email" type="email" value={form.email} disabled={!!form.id}
+                <Input id="a-email" type="email" value={!form.id && form.role === "INTERVIEWER" ? tableEmail(form.tableId) : form.email} disabled={!!form.id || (!form.id && form.role === "INTERVIEWER")}
                   onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="giamkhao1@club.local" />
               </div>
               {!form.id && (
                 <div className="grid gap-1.5">
-                  <Label htmlFor="a-pw">Mật khẩu (tối thiểu 8 ký tự)</Label>
+                  <Label htmlFor="a-pw">Mật khẩu ({form.role === "INTERVIEWER" ? "đúng 8 ký tự" : "tối thiểu 8 ký tự"})</Label>
                   <div className="flex gap-2">
-                    <Input id="a-pw" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className="font-mono" />
+                    <Input id="a-pw" value={form.password} maxLength={form.role === "INTERVIEWER" ? 8 : undefined} onChange={(e) => setForm({ ...form, password: e.target.value })} className="font-mono" />
                     <Button type="button" variant="outline" size="icon" title="Tạo ngẫu nhiên" aria-label="Tạo mật khẩu ngẫu nhiên"
-                      onClick={() => setForm({ ...form, password: genPassword() })}>
+                      onClick={() => setForm({ ...form, password: genPassword(form.role === "INTERVIEWER" ? 8 : 12) })}>
                       <Wand2 />
                     </Button>
                   </div>
@@ -213,9 +267,9 @@ export function AccountsManager({
               )}
               <div className="grid gap-1.5">
                 <Label htmlFor="a-role">Vai trò</Label>
-                <select id="a-role" className={SELECT_CLS} value={form.role}
+                  <select id="a-role" className={SELECT_CLS} value={form.role}
                   disabled={form.id === currentUserId}
-                  onChange={(e) => setForm({ ...form, role: e.target.value as UserRole })}>
+                  onChange={(e) => { const role = e.target.value as UserRole; setForm({ ...form, role, password: !form.id && role === "INTERVIEWER" && form.role !== "INTERVIEWER" ? genPassword(8) : form.password }); }}>
                   {ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
                 </select>
               </div>
@@ -231,6 +285,7 @@ export function AccountsManager({
                     ))}
                   </select>
                   <p className="text-xs text-muted-foreground">Mỗi bàn dùng một tài khoản đăng nhập chung trên máy của bàn; các giám khảo khác không cần tài khoản riêng.</p>
+                  {!form.id && form.tableId && <p className="text-xs text-muted-foreground">Email sẽ được tạo theo tên phòng và bàn: <span className="font-mono">{tableEmail(form.tableId)}</span></p>}
                   {tables.length === 0 && <p className="text-xs text-red-600">Chưa có bàn nào. Tạo ở mục “Phòng & Bàn”.</p>}
                 </div>
               )}
@@ -238,7 +293,7 @@ export function AccountsManager({
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setForm(null)}>Huỷ</Button>
-            <Button onClick={save} disabled={busy}>{busy && <Loader2 className="animate-spin" />}{form?.id ? "Lưu" : "Tạo tài khoản"}</Button>
+            <Button onClick={save} disabled={busy || (!!form && !form.id && form.role === "INTERVIEWER" && (!form.tableId || form.password.length !== 8))}>{busy && <Loader2 className="animate-spin" />}{form?.id ? "Lưu" : "Tạo tài khoản"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -274,7 +329,7 @@ export function AccountsManager({
             <AlertDialogDescription>{pwFor?.p.email} sẽ dùng mật khẩu mới dưới đây.</AlertDialogDescription>
           </AlertDialogHeader>
           {pwFor && (
-            <Input value={pwFor.pw} onChange={(e) => setPwFor({ ...pwFor, pw: e.target.value })} className="font-mono" aria-label="Mật khẩu mới" />
+            <Input value={pwFor.pw} maxLength={pwFor.p.role === "INTERVIEWER" ? 8 : undefined} onChange={(e) => setPwFor({ ...pwFor, pw: e.target.value })} className="font-mono" aria-label="Mật khẩu mới" />
           )}
           <AlertDialogFooter>
             <AlertDialogCancel>Huỷ</AlertDialogCancel>
@@ -295,6 +350,23 @@ export function AccountsManager({
           <AlertDialogFooter>
             <AlertDialogCancel>Huỷ</AlertDialogCancel>
             <AlertDialogAction variant="destructive" onClick={doDelete} disabled={busy}>Xoá</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={deleteAllOpen} onOpenChange={(open) => !busy && setDeleteAllOpen(open)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Xóa toàn bộ tài khoản Giám khảo?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Thao tác này xóa {profiles.filter((profile) => profile.role === "INTERVIEWER").length} tài khoản Giám khảo và đăng xuất các phiên hiện tại. Phiếu đánh giá đã lưu vẫn được giữ. Cần giải phóng tất cả bàn trước khi xóa.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busy}>Hủy</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={doDeleteAllInterviewers} disabled={busy}>
+              {busy && <Loader2 className="animate-spin" />} Xóa toàn bộ Giám khảo
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

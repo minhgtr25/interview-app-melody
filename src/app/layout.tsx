@@ -25,7 +25,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="vi">
       <body className={`${font.variable} antialiased`}>
         {children}
-        <Toaster richColors position="top-center" closeButton />
+        <Toaster richColors position="top-center" closeButton duration={4500} visibleToasts={3} expand={false} />
       </body>
     </html>
   );

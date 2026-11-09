@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Loader2, Plus, Trash2 } from "lucide-react";
+import { Loader2, Plus, Search, Trash2, X, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { BuildingRadio } from "@/components/building-radio";
 import { DepartmentRadio } from "@/components/department-radio";
@@ -12,7 +13,7 @@ import {
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { createClient } from "@/lib/supabase/client";
-import { errorMessage } from "@/lib/format";
+import { errorMessage, normalizeText } from "@/lib/format";
 import { BUILDINGS, isBuildingCode, isRoomNumber, roomCode, type BuildingCode } from "@/lib/rooms";
 import { Input } from "@/components/ui/input";
 import { DEPARTMENTS, isDepartmentCode, type DepartmentCode } from "@/lib/departments";
@@ -20,6 +21,7 @@ import type { InterviewTable, Profile, Room } from "@/lib/types";
 import { assignRoomTableAccounts, createTableAccount, deleteAccount } from "@/app/admin/actions";
 import { SPECIALIZATIONS_BY_DEPARTMENT, isSpecializedDepartment, isSpecializationForDepartment, specializationLabel, type SpecializationCode } from "@/lib/specializations";
 import { dayLabel, todayInVietnam } from "@/lib/interview-days";
+import { useServerNow } from "@/components/clock";
 
 type TableSetup = { department: DepartmentCode | ""; specialization: SpecializationCode | ""; createAccount: boolean; judgeId: string };
 type RoomForm = {
@@ -172,9 +174,14 @@ function ExistingRoom({ room, tables, profiles, busy, onSave, onDelete }: {
         {sorted.map((table) => <li key={table.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2">
           <span>{table.name} ({table.department ?? "Chưa chọn Ban"}{table.specialization ? ` · ${specializationLabel(table.specialization)}` : ""})</span>
           <span className="text-muted-foreground">{profiles.find((profile) => profile.role === "INTERVIEWER" && profile.table_id === table.id)?.full_name || "Chưa có tài khoản đại diện"}</span>
-          <Button size="xs" variant="outline" onClick={openEditor} disabled={busy} aria-label={`Cấu hình ${room.name} - ${table.name}`}>
-            Cấu hình bàn
-          </Button>
+          <div className="flex items-center gap-2">
+            <Link href={`/admin-preview/${table.id}`} className="inline-flex h-8 items-center rounded-md border border-input bg-background px-2.5 text-xs font-medium hover:bg-muted">
+              Mở bàn
+            </Link>
+            <Button size="xs" variant="outline" onClick={openEditor} disabled={busy} aria-label={`Cấu hình ${room.name} - ${table.name}`}>
+              Cấu hình bàn
+            </Button>
+          </div>
         </li>)}
       </ul>
       <Button variant="outline" onClick={openEditor} disabled={busy}>Cấu hình phòng và bàn</Button>
@@ -195,15 +202,28 @@ function ExistingRoom({ room, tables, profiles, busy, onSave, onDelete }: {
 }
 
 export function RoomsManager({ rooms, tables, profiles, activeDay }: { rooms: Room[]; tables: InterviewTable[]; profiles: Profile[]; activeDay: string }) {
+  const now = useServerNow(30_000);
   const router = useRouter();
   const [newForm, setNewForm] = useState<RoomForm>(emptyForm);
   const [busy, setBusy] = useState(false);
   const [deleteRoom, setDeleteRoom] = useState<Room | null>(null);
   const [newCredentials, setNewCredentials] = useState<{ table: string; email: string; password: string }[]>([]);
+  const [roomQuery, setRoomQuery] = useState("");
+  const [roomDepartment, setRoomDepartment] = useState<DepartmentCode | "">("");
   const supabase = createClient();
   const judges = profiles.filter((profile) => profile.role === "INTERVIEWER");
   const unassignedJudges = judges.filter((judge) => !judge.table_id);
-  const dayReady = activeDay === todayInVietnam();
+  const dayReady = activeDay === todayInVietnam(now);
+  const filteredRooms = useMemo(() => rooms.filter((room) => {
+    const roomTables = tables.filter((table) => table.room_id === room.id);
+    if (roomDepartment && !roomTables.some((table) => table.department === roomDepartment)) return false;
+    const judgeNames = roomTables.map((table) => {
+      const judge = profiles.find((profile) => profile.role === "INTERVIEWER" && profile.table_id === table.id);
+      return `${judge?.full_name ?? ""} ${judge?.email ?? ""}`;
+    }).join(" ");
+    const tableText = roomTables.map((table) => `${table.name} ${table.department ?? ""} ${table.specialization ? specializationLabel(table.specialization) : ""}`).join(" ");
+    return !roomQuery || normalizeText(`${room.name} ${room.building_code ?? ""} ${tableText} ${judgeNames}`).includes(normalizeText(roomQuery));
+  }), [rooms, tables, profiles, roomQuery, roomDepartment]);
 
   async function saveRoom(existing: Room | null, form: RoomForm) {
     if (!dayReady) return toast.error("Kích hoạt bố trí phòng cho ngày hôm nay trước khi sửa phòng/bàn đang hoạt động");
@@ -368,8 +388,24 @@ export function RoomsManager({ rooms, tables, profiles, activeDay }: { rooms: Ro
       })}
     </section>
 
+    <section className="space-y-3 rounded-xl border bg-card p-3" aria-label="Tìm và lọc phòng đã tạo">
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <div className="relative min-w-0 flex-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input type="search" value={roomQuery} onChange={(event) => setRoomQuery(event.target.value)} className="pl-9 pr-9"
+            placeholder="Tìm theo phòng, bàn, ban, ngạch hoặc tài khoản giám khảo" aria-label="Tìm phòng hoặc bàn" />
+          {roomQuery && <Button type="button" variant="ghost" size="icon-xs" className="absolute right-2 top-1/2 -translate-y-1/2"
+            aria-label="Xóa nội dung tìm kiếm" onClick={() => setRoomQuery("")}><X /></Button>}
+        </div>
+        {(roomQuery || roomDepartment) && <Button type="button" variant="ghost" size="sm" className="shrink-0"
+          onClick={() => { setRoomQuery(""); setRoomDepartment(""); }}><RotateCcw /> Xóa bộ lọc</Button>}
+      </div>
+      <DepartmentRadio name="room-list-department" value={roomDepartment} onChange={setRoomDepartment} allowAll />
+      <p className="text-xs text-muted-foreground" aria-live="polite">Hiển thị {filteredRooms.length}/{rooms.length} phòng</p>
+    </section>
+
     {BUILDINGS.map((building) => {
-      const buildingRooms = rooms.filter((room) => room.building_code === building.code);
+      const buildingRooms = filteredRooms.filter((room) => room.building_code === building.code);
       if (!buildingRooms.length) return null;
       return <section key={building.code} className="space-y-3">
         <h3 className="text-base font-semibold">{building.name} ({building.code}) · {buildingRooms.length} phòng</h3>
@@ -380,14 +416,15 @@ export function RoomsManager({ rooms, tables, profiles, activeDay }: { rooms: Ro
         </div>
       </section>;
     })}
-    {rooms.some((room) => !room.building_code) && <section className="space-y-3">
+    {filteredRooms.some((room) => !room.building_code) && <section className="space-y-3">
       <h3 className="text-base font-semibold">Phòng cũ cần chọn Tòa và Số phòng</h3>
       <div className="grid gap-4 xl:grid-cols-2">
-        {rooms.filter((room) => !room.building_code).map((room) => <ExistingRoom key={`${room.id}-${room.is_configured}`}
+        {filteredRooms.filter((room) => !room.building_code).map((room) => <ExistingRoom key={`${room.id}-${room.is_configured}`}
           room={room} tables={tables.filter((table) => table.room_id === room.id)} profiles={profiles}
           busy={busy || !dayReady} onSave={(target, form) => saveRoom(target, form)} onDelete={setDeleteRoom} />)}
       </div>
     </section>}
+    {filteredRooms.length === 0 && <p className="rounded-xl border border-dashed bg-card p-10 text-center text-sm text-muted-foreground">Không có phòng hoặc bàn khớp với bộ lọc.</p>}
 
     <AlertDialog open={!!deleteRoom} onOpenChange={(open) => !open && setDeleteRoom(null)}>
       <AlertDialogContent>

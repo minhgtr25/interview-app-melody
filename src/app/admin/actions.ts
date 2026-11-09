@@ -1,12 +1,13 @@
 "use server";
 
-import { randomBytes, randomInt } from "node:crypto";
+import { randomInt } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { createClient, createServiceClient, getSessionProfile } from "@/lib/supabase/server";
 import type { UserRole } from "@/lib/types";
 import { normalizeDepartment } from "@/lib/departments";
 import { normalizeGender, normalizeStudentNumber } from "@/lib/personal-info";
 import { isSpecializationForDepartment } from "@/lib/specializations";
+import { errorMessage } from "@/lib/format";
 
 export type ActionResult<T = undefined> = { ok: true; data?: T } | { ok: false; error: string };
 
@@ -23,8 +24,7 @@ async function assertAdmin() {
 }
 
 function fail(err: unknown): { ok: false; error: string } {
-  const msg = err instanceof Error ? err.message : typeof err === "object" && err && "message" in err ? String(err.message) : "Đã có lỗi xảy ra";
-  return { ok: false, error: msg };
+  return { ok: false, error: errorMessage(err) };
 }
 
 function validatePassword(pw: string) {
@@ -44,6 +44,17 @@ function generateTablePassword() {
   return characters.join("");
 }
 
+function interviewerEmail(roomName: string, tableName: string) {
+  const localPart = `${roomName}-${tableName}`
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  if (!localPart) throw new Error("Không tạo được email từ tên phòng và bàn");
+  return `${localPart}@club.local`;
+}
+
 export async function createTableAccount(tableId: string): Promise<ActionResult<{ id: string; email: string; password: string }>> {
   try {
     await assertAdmin();
@@ -52,7 +63,7 @@ export async function createTableAccount(tableId: string): Promise<ActionResult<
     if (tableError || !table) throw tableError ?? new Error("Không tìm thấy bàn");
     const { data: room, error: roomError } = await admin.from("rooms").select("name,is_challenge").eq("id", table.room_id).single();
     if (roomError || !room) throw roomError ?? new Error("Không tìm thấy phòng");
-    const email = `table-${table.id.slice(0, 8)}-${randomBytes(4).toString("hex")}@club.local`;
+    const email = interviewerEmail(room.name, table.name);
     const password = generateTablePassword();
     const fullName = `${room.is_challenge ? "Giám khảo thử thách" : "Đại diện"} ${room.name} - ${table.name}`;
     const { data, error } = await admin.auth.admin.createUser({
@@ -152,16 +163,28 @@ export async function createAccount(input: {
   fullName: string;
   role: UserRole;
   tableId: string | null;
-}): Promise<ActionResult> {
+}): Promise<ActionResult<{ email: string; password: string }>> {
   try {
     await assertAdmin();
-    const email = input.email.trim().toLowerCase();
-    if (!EMAIL_RE.test(email)) throw new Error("Email không hợp lệ");
     if (!ROLES.includes(input.role)) throw new Error("Vai trò không hợp lệ");
     validatePassword(input.password);
     const tableId = input.role === "INTERVIEWER" ? input.tableId || null : null;
 
     const admin = createServiceClient();
+    let email = input.email.trim().toLowerCase();
+    if (input.role === "INTERVIEWER") {
+      if (!tableId) throw new Error("Chọn bàn để tạo tài khoản Giám khảo");
+      if (input.password.length !== 8) throw new Error("Mật khẩu Giám khảo phải đúng 8 ký tự");
+      const { data: table, error: tableError } = await admin.from("tables").select("id,room_id,name").eq("id", tableId).single();
+      if (tableError || !table) throw tableError ?? new Error("Không tìm thấy bàn");
+      const { data: room, error: roomError } = await admin.from("rooms").select("name").eq("id", table.room_id).single();
+      if (roomError || !room) throw roomError ?? new Error("Không tìm thấy phòng");
+      const { data: assigned } = await admin.from("profiles").select("id").eq("role", "INTERVIEWER").eq("table_id", tableId).limit(1);
+      if (assigned?.length) throw new Error("Bàn này đã có tài khoản Giám khảo");
+      email = interviewerEmail(room.name, table.name);
+    } else if (!EMAIL_RE.test(email)) {
+      throw new Error("Email không hợp lệ");
+    }
     const { data, error } = await admin.auth.admin.createUser({
       email,
       password: input.password,
@@ -185,7 +208,7 @@ export async function createAccount(input: {
       throw pErr;
     }
     revalidatePath("/admin/accounts");
-    return { ok: true };
+    return { ok: true, data: { email, password: input.password } };
   } catch (e) {
     return fail(e);
   }
@@ -224,9 +247,38 @@ export async function resetPassword(id: string, password: string): Promise<Actio
   try {
     await assertAdmin();
     validatePassword(password);
-    const { error } = await createServiceClient().auth.admin.updateUserById(id, { password });
+    const admin = createServiceClient();
+    const { data: profile } = await admin.from("profiles").select("role").eq("id", id).maybeSingle();
+    if (profile?.role === "INTERVIEWER" && password.length !== 8) throw new Error("Mật khẩu Giám khảo phải đúng 8 ký tự");
+    const { error } = await admin.auth.admin.updateUserById(id, { password });
     if (error) throw error;
     return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+export async function deleteAllInterviewerAccounts(): Promise<ActionResult<{ deleted: number; failed: number }>> {
+  try {
+    await assertAdmin();
+    const admin = createServiceClient();
+    const { data: occupied, error: tableError } = await admin.from("tables").select("id").neq("status", "AVAILABLE").limit(1);
+    if (tableError) throw tableError;
+    if (occupied?.length) throw new Error("Giải phóng các bàn đang có thí sinh trước khi xóa tài khoản Giám khảo");
+
+    const { data: interviewers, error } = await admin.from("profiles").select("id").eq("role", "INTERVIEWER");
+    if (error) throw error;
+    let deleted = 0;
+    let failed = 0;
+    for (const interviewer of interviewers ?? []) {
+      const result = await admin.auth.admin.deleteUser(interviewer.id);
+      if (result.error) failed++;
+      else deleted++;
+    }
+    revalidatePath("/admin/accounts");
+    revalidatePath("/admin/rooms");
+    if (failed && !deleted) throw new Error(`Không xóa được tài khoản nào; ${failed} tài khoản gặp lỗi`);
+    return { ok: true, data: { deleted, failed } };
   } catch (e) {
     return fail(e);
   }
@@ -330,12 +382,12 @@ export async function importSchedules(rows: { student_number: string | null; ema
     // Require the new schedule RPC before writing any rows.
     const probe = await client.rpc("update_candidate_schedules", { p_updates: [] });
     if (probe.error?.code === "PGRST202" || probe.error?.code === "42883") {
-      throw new Error("Database chưa cập nhật. Chạy migration 20261119_interview_days.sql trước khi nhập lịch.");
+      throw new Error("Tính năng nhập lịch chưa sẵn sàng trên máy chủ. Hãy liên hệ Support IT.");
     }
     if (probe.error && probe.error.code !== "P0001") throw probe.error;
     const { data, error } = await client.rpc("import_candidate_schedules", { p_rows: clean });
     if (error) {
-      if (error.code === "PGRST202") throw new Error("Database chưa cập nhật. Chạy migration 20261119_interview_days.sql trước khi nhập lịch.");
+      if (error.code === "PGRST202") throw new Error("Tính năng nhập lịch chưa sẵn sàng trên máy chủ. Hãy liên hệ Support IT.");
       throw error;
     }
     revalidatePath("/admin/candidates");
@@ -383,7 +435,7 @@ export async function importCandidates(rows: FormCandidateInput[]): Promise<Acti
     const { data, error } = await supabase.rpc("import_form_candidates", { p_rows: clean });
     if (error) {
       if (error.code === "PGRST202" || error.code === "42703") {
-        throw new Error("Database chưa cập nhật. Chạy migration 20261108_candidate_personal_fields.sql trước khi import.");
+        throw new Error("Tính năng nhập hồ sơ chưa sẵn sàng trên máy chủ. Hãy liên hệ Support IT.");
       }
       throw error;
     }

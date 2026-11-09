@@ -10,7 +10,11 @@ export const dynamic = "force-dynamic";
 export default async function CheckinPage() {
   const profile = await requireRole(["CHECKIN", "ADMIN", "COORDINATOR"]);
   const supabase = await createClient();
+  await supabase.rpc("ensure_interview_day");
   await supabase.rpc("activate_due_followups");
-  const candidates = await fetchAll<Candidate>(supabase, "candidates");
-  return <ClockProvider><CheckinBoard initialCandidates={candidates} staffName={profile.full_name || profile.email} /></ClockProvider>;
+  const [candidates, dayState] = await Promise.all([
+    fetchAll<Candidate>(supabase, "candidates"),
+    supabase.from("interview_day_state").select("day").eq("id", "main").maybeSingle(),
+  ]);
+  return <ClockProvider><CheckinBoard initialCandidates={candidates} activeDay={dayState.data?.day} staffName={profile.full_name || profile.email} /></ClockProvider>;
 }

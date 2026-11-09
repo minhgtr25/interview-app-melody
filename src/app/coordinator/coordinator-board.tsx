@@ -4,7 +4,7 @@ import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { RealtimeChannel, RealtimePostgresChangesPayload } from "@supabase/supabase-js";
 import { toast } from "sonner";
-import { GripVertical, Loader2, UserX, Undo2, ArrowRightLeft, CircleCheck, Timer, Hourglass, MessageCircle, X, BellRing, Search, ClipboardList, Pause, CalendarClock } from "lucide-react";
+import { GripVertical, Loader2, UserX, Undo2, ArrowRightLeft, CircleCheck, Timer, Hourglass, MessageCircle, X, BellRing, Search, ClipboardList, Pause, CalendarClock, RotateCcw } from "lucide-react";
 import { AppHeader } from "@/components/app-header";
 import { Elapsed, useServerNow } from "@/components/clock";
 import { Button } from "@/components/ui/button";
@@ -39,6 +39,7 @@ import { makeInterviewShift } from "@/lib/interview-days";
 import { ScheduleFields, isFutureInterviewSlot } from "@/components/schedule-fields";
 import { ScheduleRequestDialog } from "@/components/schedule-request-dialog";
 import { AbsenceManagerDialog } from "@/components/absence-manager-dialog";
+import { useInterviewDayAutoSwitch } from "@/hooks/use-interview-day-auto-switch";
 
 type Confirm =
   | { kind: "release"; table: InterviewTable; candidate?: Candidate }
@@ -68,7 +69,12 @@ export function CoordinatorBoard({
   const roomRows = useRealtimeRows<Room>("rooms", rooms, "sort_order");
   const profileRows = useRealtimeRows<Profile>("profiles", profiles);
   const dayState = useRealtimeRows<{ id: string; day: string }>("interview_day_state", initialDayState, "day");
-  const dayReady = !dayState.rows.length || dayState.rows[0].day === todayInVietnam();
+  const now = useServerNow(30_000);
+  const today = todayInVietnam(now);
+  const activeDay = dayState.rows[0]?.day;
+  useInterviewDayAutoSwitch(activeDay);
+  const dayReady = !activeDay || activeDay === today;
+  const previousDay = useRef(today);
   const interviewerTableIds = useMemo(() => new Set(profileRows.rows
     .filter((profile) => profile.role === "INTERVIEWER" && profile.table_id)
     .map((profile) => profile.table_id!)), [profileRows.rows]);
@@ -83,10 +89,9 @@ export function CoordinatorBoard({
   const [followupCandidate, setFollowupCandidate] = useState<Candidate | null>(null);
   const [followupDate, setFollowupDate] = useState("");
   const [followupTime, setFollowupTime] = useState("");
-  const now = useServerNow(30_000);
   const [tab, setTab] = useState<string>("queue");
   const [queueDepartment, setQueueDepartment] = useState<DepartmentCode | "">("");
-  const [queueDay, setQueueDay] = useState(() => interviewDays(initialCandidates).includes(todayInVietnam()) ? todayInVietnam() : "");
+  const [queueDay, setQueueDay] = useState(() => interviewDays(initialCandidates).includes(today) ? today : "");
   const [queueSearch, setQueueSearch] = useState("");
   const deferredQueueSearch = normalizeText(useDeferredValue(queueSearch));
   const [chatTableId, setChatTableId] = useState<string | null>(null);
@@ -98,17 +103,12 @@ export function CoordinatorBoard({
   const chatTableIdRef = useRef(chatTableId);
 
   useEffect(() => {
-    let previous = todayInVietnam();
-    const timer = window.setInterval(() => {
-      const current = todayInVietnam();
-      if (current !== previous) {
-        setQueueDay((selected) => selected === previous ? current : selected);
-        setSelectedId(null);
-        previous = current;
-      }
-    }, 60_000);
-    return () => window.clearInterval(timer);
-  }, []);
+    if (today === previousDay.current) return;
+    const previous = previousDay.current;
+    setQueueDay((selected) => selected === previous ? today : selected);
+    setSelectedId(null);
+    previousDay.current = today;
+  }, [today]);
   tablesRef.current = tbl.rows;
   roomsRef.current = roomRows.rows;
   chatTableIdRef.current = chatTableId;
@@ -251,7 +251,7 @@ export function CoordinatorBoard({
   const selectedValid = selected && queue.some((candidate) => candidate.id === selected.id) ? selected : undefined;
 
   async function assign(candidateId: string, table: InterviewTable) {
-    if (!dayReady) return toast.error("Admin cần kích hoạt bố trí phòng cho ngày hôm nay");
+    if (!dayReady) return toast.error("Chưa thể điều phối: hệ thống đang chờ bố trí phòng ngày hôm nay");
     const c = candById.get(candidateId);
     if (!c || !queue.some((candidate) => candidate.id === c.id)) return toast.error("Thí sinh không còn ở hàng chờ của ngày đã chọn");
     if (c.source_candidate_id && !c.shift) return toast.error("Cần xếp Ca Ban thứ hai trước khi đẩy thí sinh vào bàn");
@@ -322,7 +322,7 @@ export function CoordinatorBoard({
   }
 
   function onTableClick(t: InterviewTable) {
-    if (!dayReady) return toast.info("Admin cần kích hoạt bố trí phòng cho ngày hôm nay");
+    if (!dayReady) return toast.info("Hệ thống đang khóa bố trí cũ và chờ cấu hình ngày hôm nay");
     if (roomById.get(t.room_id)?.is_challenge) return;
     if (t.is_paused) return toast.info("Bàn này đang tạm dừng tiếp nhận");
     if (t.status !== "AVAILABLE") return;
@@ -358,6 +358,10 @@ export function CoordinatorBoard({
             className="pl-9" placeholder="Tìm tên, mã hoặc SĐT thí sinh…" aria-label="Tìm thí sinh trong hàng chờ" />
         </div>
         <DepartmentRadio name="coordinator-queue-department" value={queueDepartment} onChange={setQueueDepartment} allowAll />
+        {(queueSearch || queueDay || queueDepartment) && <Button type="button" variant="ghost" size="sm" className="w-full"
+          onClick={() => { setQueueSearch(""); setQueueDay(""); setQueueDepartment(""); setSelectedId(null); }}>
+          <RotateCcw /> Xóa bộ lọc
+        </Button>}
       </div>
       <ol className="flex-1 space-y-2 overflow-y-auto p-3">
         {queue.map((c, i) => {
@@ -614,7 +618,7 @@ export function CoordinatorBoard({
           Mở màn hình chờ trên tab mới
         </a>
       </div>
-      {!dayReady && <p className="border-b border-amber-300 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-900">Bố trí phòng đang ở ngày {dayLabel(dayState.rows[0].day)}. Admin cần kích hoạt ngày {dayLabel(todayInVietnam())} trước khi điều phối.</p>}
+      {!dayReady && <p className="border-b border-amber-300 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-900">Bố trí ngày {dayState.rows[0]?.day ? dayLabel(dayState.rows[0].day) : "trước"} đã khóa. Hệ thống sẽ áp dụng bố trí ngày {dayLabel(todayInVietnam(now))} sau khi các ca cũ hoàn tất và lịch hôm nay đã được lưu.</p>}
 
       <div className="pointer-events-none fixed inset-x-4 bottom-4 z-50 flex flex-col gap-2 sm:right-4 sm:left-auto sm:w-96" aria-live="polite">
         {alarms.map((alarm) => <div key={alarm.id} role="status" className={cn(

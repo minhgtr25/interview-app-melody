@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useDeferredValue, useMemo, useState } from "react";
-import { ArrowLeft, ClipboardList, DoorOpen, Search, UserRound } from "lucide-react";
+import { ArrowLeft, CalendarDays, ClipboardList, DoorOpen, RotateCcw, Search, UserRound } from "lucide-react";
 import { AppHeader } from "@/components/app-header";
 import { DepartmentRadio } from "@/components/department-radio";
 import { StatusBadge } from "@/components/status-badge";
@@ -13,6 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useRealtimeRows } from "@/hooks/use-realtime-rows";
 import { DEPARTMENTS, type DepartmentCode } from "@/lib/departments";
 import { formatDateTime, formatDuration, normalizeText, safeUrl } from "@/lib/format";
+import { dayLabel, interviewDate, interviewDays, todayInVietnam } from "@/lib/interview-days";
 import { STATUS_LABEL, type Candidate, type CandidateStatus, type Evaluation, type InterviewTable, type Room, type RubricCriterion } from "@/lib/types";
 import { groupCandidateApplications } from "@/components/candidate-applications";
 import { cn } from "@/lib/utils";
@@ -35,6 +36,10 @@ export function OperationsBoard({ role, staffName, initialCandidates, initialEva
   const search = normalizeText(useDeferredValue(query));
   const [department, setDepartment] = useState<DepartmentCode | "">("");
   const [candidateStatus, setCandidateStatus] = useState<CandidateStatus | "">("");
+  const [dayFilter, setDayFilter] = useState(() => {
+    const today = todayInVietnam();
+    return interviewDays(initialCandidates).includes(today) ? today : "";
+  });
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
 
@@ -52,12 +57,14 @@ export function OperationsBoard({ role, staffName, initialCandidates, initialEva
     return result;
   }, [evaluations.rows]);
   const roomById = useMemo(() => new Map(rooms.rows.map((item) => [item.id, item])), [rooms.rows]);
+  const availableDays = useMemo(() => interviewDays(candidates.rows), [candidates.rows]);
 
   const visibleCandidates = useMemo(() => candidates.rows.filter((candidate) => {
+    if (dayFilter && interviewDate(candidate) !== dayFilter) return false;
     if (department && candidate.department !== department) return false;
     if (candidateStatus && candidate.status !== candidateStatus) return false;
     return !search || normalizeText(`${candidate.code} ${candidate.student_number ?? ""} ${candidate.full_name} ${candidate.phone ?? ""} ${candidate.email ?? ""}`).includes(search);
-  }).sort((a, b) => a.code.localeCompare(b.code, "vi", { numeric: true })), [candidates.rows, department, candidateStatus, search]);
+  }).sort((a, b) => a.code.localeCompare(b.code, "vi", { numeric: true })), [candidates.rows, dayFilter, department, candidateStatus, search]);
 
   const groupByCandidate = useMemo(() => {
     const map = new Map<string, ReturnType<typeof groupCandidateApplications>[number]>();
@@ -115,8 +122,21 @@ export function OperationsBoard({ role, staffName, initialCandidates, initialEva
             <option value="">Mọi trạng thái</option>
             {(Object.keys(STATUS_LABEL) as CandidateStatus[]).map((item) => <option key={item} value={item}>{STATUS_LABEL[item]}</option>)}
           </select>}
+          {view === "candidates" && <label className="relative">
+            <CalendarDays className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <select className="h-9 rounded-md border bg-background pl-9 pr-3 text-sm" value={dayFilter}
+              onChange={(event) => setDayFilter(event.target.value)} aria-label="Lọc theo ngày phỏng vấn">
+              <option value="">Mọi ngày</option>
+              {availableDays.map((day) => <option key={day} value={day}>{dayLabel(day)}</option>)}
+            </select>
+          </label>}
+          {(query || department || (view === "candidates" && (candidateStatus || dayFilter))) && <Button type="button" variant="ghost" size="sm" className="shrink-0"
+            onClick={() => { setQuery(""); setDepartment(""); setCandidateStatus(""); setDayFilter(""); }}>
+            <RotateCcw /> Xóa bộ lọc
+          </Button>}
         </div>
         <DepartmentRadio name="operations-department" value={department} onChange={setDepartment} allowAll />
+        {view === "candidates" && <p className="text-xs text-muted-foreground" aria-live="polite">Đang hiển thị {visibleCandidates.length}/{candidates.rows.length} lượt phỏng vấn</p>}
       </div>
 
       {view === "candidates" ? <div className="overflow-x-auto rounded-xl border bg-card">

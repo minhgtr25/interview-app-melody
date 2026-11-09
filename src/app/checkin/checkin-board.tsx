@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition, useDeferredValue } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition, useDeferredValue } from "react";
 import { toast } from "sonner";
-import { Check, Search, Undo2, UserX, Loader2, Phone, Hash, Plus, Pencil, CalendarClock } from "lucide-react";
+import { Check, Search, Undo2, UserX, Loader2, Phone, Hash, Plus, Pencil, CalendarClock, RotateCcw, X } from "lucide-react";
 import { AppHeader } from "@/components/app-header";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
@@ -24,6 +24,7 @@ import { SPECIALIZATIONS_BY_DEPARTMENT, isSpecializedDepartment, specializationL
 import { dayLabel, interviewDate, interviewDays, todayInVietnam } from "@/lib/interview-days";
 import { ScheduleRequestDialog } from "@/components/schedule-request-dialog";
 import { useServerNow } from "@/components/clock";
+import { useInterviewDayAutoSwitch } from "@/hooks/use-interview-day-auto-switch";
 
 const NATIVE_SELECT =
   "h-10 rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50";
@@ -41,20 +42,25 @@ function haptic() {
 
 export function CheckinBoard({
   initialCandidates,
+  activeDay,
   staffName,
 }: {
   initialCandidates: Candidate[];
+  activeDay?: string;
   staffName: string;
 }) {
   const { rows, setRows, patchRow, status } = useRealtimeRows<Candidate>("candidates", initialCandidates);
+  const serverNow = useServerNow(30_000);
+  useInterviewDayAutoSwitch(activeDay);
   const [query, setQuery] = useState("");
   const deferredQuery = useDeferredValue(query);
   const [shift, setShift] = useState("");
-  const [day, setDay] = useState(() => interviewDays(initialCandidates).includes(todayInVietnam()) ? todayInVietnam() : "");
+  const today = todayInVietnam(serverNow);
+  const previousDay = useRef(today);
+  const [day, setDay] = useState(() => interviewDays(initialCandidates).includes(today) ? today : "");
   const [dept, setDept] = useState<DepartmentCode | "">("");
   const [statusFilter, setStatusFilter] = useState<"" | CandidateStatus>("");
   const [absenceManager, setAbsenceManager] = useState(false);
-  const serverNow = useServerNow(30_000);
   const [scheduleCandidate, setScheduleCandidate] = useState<Candidate | null>(null);
   const [absenceCandidate, setAbsenceCandidate] = useState<Candidate | null>(null);
   const [absenceNote, setAbsenceNote] = useState("");
@@ -68,17 +74,12 @@ export function CheckinBoard({
   const [, startTransition] = useTransition();
 
   useEffect(() => {
-    let previous = todayInVietnam();
-    const timer = window.setInterval(() => {
-      const current = todayInVietnam();
-      if (current !== previous) {
-        setDay((selected) => selected === previous ? current : selected);
-        setShift("");
-        previous = current;
-      }
-    }, 60_000);
-    return () => window.clearInterval(timer);
-  }, []);
+    if (today === previousDay.current) return;
+    const previous = previousDay.current;
+    setDay((selected) => selected === previous ? today : selected);
+    setShift("");
+    previousDay.current = today;
+  }, [today]);
 
   const days = useMemo(() => interviewDays(rows), [rows]);
   const shifts = useMemo(
@@ -195,9 +196,7 @@ export function CheckinBoard({
     setSavingAbsence(false);
     setBusyId(null);
     if (error) {
-      toast.error(error.code === "PGRST202" || error.code === "42703"
-        ? "Database chưa có chức năng sửa ghi chú vắng mặt. Admin cần chạy migration 20261113_edit_absence_notes.sql."
-        : errorMessage(error));
+      toast.error(errorMessage(error));
       return;
     }
     if (absenceDialogMode === "EDIT") {
@@ -238,8 +237,6 @@ export function CheckinBoard({
       toast.error(error.code === "23505" ? error.message?.includes("student_number")
         ? `MSSV "${walkIn.studentNumber.trim()}" đã thuộc thí sinh khác`
         : `Mã ứng viên "${walkIn.code.trim()}" đã tồn tại`
-          : error.code === "PGRST202" || error.code === "42703"
-          ? "Database chưa cập nhật hồ sơ thí sinh. Admin cần chạy migration 20261108_candidate_personal_fields.sql."
           : errorMessage(error));
       return;
     }
@@ -314,6 +311,8 @@ export function CheckinBoard({
               type="search"
               enterKeyHint="search"
             />
+            {query && <Button type="button" variant="ghost" size="icon-xs" className="absolute right-2 top-1/2 -translate-y-1/2"
+              aria-label="Xóa nội dung tìm kiếm" onClick={() => setQuery("")}><X /></Button>}
           </div>
           <div className="grid min-w-0 grid-cols-2 gap-2 md:grid-cols-3 2xl:flex">
             <select className={cn(NATIVE_SELECT, "w-full min-w-0")} value={day} onChange={(event) => { setDay(event.target.value); setShift(""); }} aria-label="Lọc ngày phỏng vấn">
@@ -339,6 +338,10 @@ export function CheckinBoard({
             </select>}
             <div className="col-span-2 min-w-0 md:col-span-3"><DepartmentRadio name="checkin-department" value={dept} onChange={setDept} allowAll /></div>
           </div>
+          {(query || day || shift || dept || statusFilter) && <Button type="button" variant="ghost" size="sm" className="self-start"
+            onClick={() => { setQuery(""); setDay(""); setShift(""); setDept(""); setStatusFilter(""); }}>
+            <RotateCcw /> Xóa bộ lọc
+          </Button>}
         </div>
       </div>
 

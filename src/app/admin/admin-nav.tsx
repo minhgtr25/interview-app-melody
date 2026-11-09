@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { LayoutDashboard, Users, UserCog, DoorOpen, ListChecks, ExternalLink, ClipboardList, KeyRound, CalendarClock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createClient, prepareRealtime } from "@/lib/supabase/client";
+import { useInterviewDayAutoSwitch } from "@/hooks/use-interview-day-auto-switch";
 
 const ITEMS = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
@@ -23,8 +24,9 @@ const SHORTCUTS = [
   { href: "/coordinator", label: "Màn Điều phối" },
 ];
 
-export function AdminNav() {
+export function AdminNav({ activeDay }: { activeDay: string | null }) {
   const pathname = usePathname();
+  useInterviewDayAutoSwitch(activeDay);
   const [pendingRequests, setPendingRequests] = useState(0);
   useEffect(() => {
     let active = true;

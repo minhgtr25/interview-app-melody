@@ -12,6 +12,7 @@ import { DEPARTMENTS, type DepartmentCode } from "@/lib/departments";
 import { SPECIALIZATIONS_BY_DEPARTMENT, isSpecializedDepartment, type SpecializationCode } from "@/lib/specializations";
 import { errorMessage } from "@/lib/format";
 import type { InterviewTable, Room } from "@/lib/types";
+import { useServerNow } from "@/components/clock";
 
 export type PlannedTable = { id: string; department: DepartmentCode | null; specialization: SpecializationCode | null; sort_order: number };
 export type PlannedRoom = { id: string; is_configured: boolean; is_challenge: boolean; external_challenge: boolean; sort_order: number; tables: PlannedTable[] };
@@ -38,7 +39,8 @@ export function DayRoomPlanner({ rooms, tables, activeDay, plans, scheduleDays }
   scheduleDays: string[];
 }) {
   const router = useRouter();
-  const today = todayInVietnam();
+  const serverNow = useServerNow(30_000);
+  const today = todayInVietnam(serverNow);
   const allDays = useMemo(() => [...new Set([...scheduleDays, ...plans.map((plan) => plan.day), activeDay, today])].sort(), [scheduleDays, plans, activeDay, today]);
   const [selectedDay, setSelectedDay] = useState(() => allDays.find((day) => day > activeDay) ?? activeDay);
   const [savedPlans, setSavedPlans] = useState(plans);
@@ -56,7 +58,9 @@ export function DayRoomPlanner({ rooms, tables, activeDay, plans, scheduleDays }
   const [draft, setDraft] = useState<PlannedRoom[]>(() => structuredClone(initialFor(selectedDay)));
   const [busy, setBusy] = useState(false);
   const roomById = useMemo(() => new Map(rooms.map((room) => [room.id, room])), [rooms]);
-  const isFuture = selectedDay > activeDay;
+  const isPast = selectedDay < today;
+  const canEditPlan = selectedDay >= today && selectedDay > activeDay;
+  const isFuture = canEditPlan;
   const isSaved = savedPlans.some((plan) => plan.day === selectedDay);
   const isDirty = JSON.stringify(draft) !== JSON.stringify(initialFor(selectedDay));
 
@@ -84,7 +88,7 @@ export function DayRoomPlanner({ rooms, tables, activeDay, plans, scheduleDays }
     setBusy(true);
     const { error } = await createClient().rpc("save_interview_day_plan", { p_day: selectedDay, p_rooms: draft });
     setBusy(false);
-    if (error) return toast.error(error.code === "PGRST202" ? "Chạy migration 20261120_interview_day_rooms.sql trước khi lập lịch phòng." : errorMessage(error));
+    if (error) return toast.error(errorMessage(error));
     setSavedPlans((current) => [...current.filter((plan) => plan.day !== selectedDay), { day: selectedDay, rooms: structuredClone(draft) }]);
     toast.success(`Đã lưu bố trí phòng ngày ${dayLabel(selectedDay)}`);
     router.refresh();
@@ -103,12 +107,13 @@ export function DayRoomPlanner({ rooms, tables, activeDay, plans, scheduleDays }
       <CalendarDays className="size-5" />
       <div className="mr-auto"><h2 className="font-semibold">Bố trí phòng theo ngày</h2><p className="text-sm text-muted-foreground">Ngày đang hoạt động: {dayLabel(activeDay)}. Tài khoản Giám khảo gắn với bàn và được giữ khi đổi Ban.</p></div>
       <select className="h-9 rounded-lg border border-input bg-background px-3 text-sm" value={selectedDay} onChange={(event) => chooseDay(event.target.value)} aria-label="Chọn ngày bố trí phòng">
-        {allDays.map((day) => <option key={day} value={day}>{dayLabel(day)}{day === activeDay ? " · đang hoạt động" : ""}</option>)}
+        {allDays.map((day) => <option key={day} value={day} disabled={day < today}>{dayLabel(day)}{day < today ? " · đã khoá" : day === today ? " · hôm nay" : day === activeDay ? " · đang hoạt động" : ""}</option>)}
       </select>
     </div>
+    {isPast && <p className="rounded-lg bg-muted p-3 text-sm">Bố trí ngày {dayLabel(selectedDay)} đã khóa vì ngày phỏng vấn đã qua.</p>}
     {selectedDay < activeDay && !isSaved && <p className="rounded-lg bg-muted p-3 text-sm">Không có bản chụp cấu hình phòng cho ngày này. Các phiếu chấm cũ vẫn giữ tên phòng và bàn đã ghi khi phỏng vấn.</p>}
     {selectedDay === activeDay && <p className="rounded-lg bg-muted p-3 text-sm">Bố trí ngày đang hoạt động được chỉnh tại phần cấu hình phòng và bàn bên dưới.</p>}
-    {isFuture && <p className="rounded-lg bg-blue-50 p-3 text-sm text-blue-900 dark:bg-blue-950/30 dark:text-blue-100">Chỉnh ngày sau ở đây không đổi phòng/bàn đang hoạt động. Sau khi mọi bàn trống và sang đúng ngày, bấm “Kích hoạt ngày” để áp dụng.</p>}
+    {isFuture && <p className="rounded-lg bg-blue-50 p-3 text-sm text-blue-900 dark:bg-blue-950/30 dark:text-blue-100">{selectedDay === today ? "Hệ thống đang chờ bố trí của hôm nay. Lưu cấu hình để tự chuyển ngày khi các ca cũ đã hoàn tất." : "Lưu bố trí trước ngày phỏng vấn. Hệ thống sẽ tự áp dụng vào ngày đó theo giờ Hà Nội."}</p>}
     {draft.length > 0 && <div className="grid gap-3 xl:grid-cols-2">
       {[...draft].sort((a, b) => a.sort_order - b.sort_order).map((room) => <div key={room.id} className="space-y-3 rounded-lg border p-3">
         <div className="flex flex-wrap items-center gap-3">

@@ -1,11 +1,17 @@
 "use client";
 
-import { useMemo } from "react";
-import { Clock, UserCheck, Mic, CircleCheckBig, UserX, Users, Timer } from "lucide-react";
+import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import { Clock, UserCheck, Mic, CircleCheckBig, UserX, Users, Timer, ShieldAlert } from "lucide-react";
 import { LiveIndicator } from "@/components/app-header";
 import { Elapsed } from "@/components/clock";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { createClient } from "@/lib/supabase/client";
 import { useRealtimeRows } from "@/hooks/use-realtime-rows";
-import { formatDuration } from "@/lib/format";
+import { errorMessage, formatDuration } from "@/lib/format";
 import type { Candidate, InterviewTable, Room } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -40,6 +46,10 @@ export function Dashboard({
   initialTables: InterviewTable[];
   rooms: Room[];
 }) {
+  const router = useRouter();
+  const [forceTable, setForceTable] = useState<InterviewTable | null>(null);
+  const [forceNote, setForceNote] = useState("");
+  const [forceBusy, setForceBusy] = useState(false);
   const cand = useRealtimeRows<Candidate>("candidates", initialCandidates);
   const tbl = useRealtimeRows<InterviewTable>("tables", initialTables, "sort_order");
   const status = cand.status === "live" && tbl.status === "live" ? "live" : cand.status === "offline" || tbl.status === "offline" ? "offline" : "connecting";
@@ -72,6 +82,22 @@ export function Dashboard({
   const candById = useMemo(() => new Map(cand.rows.map((c) => [c.id, c])), [cand.rows]);
   const roomName = useMemo(() => new Map(rooms.map((r) => [r.id, r.name])), [rooms]);
   const busyTables = tbl.rows.filter((t) => t.status !== "AVAILABLE");
+
+  async function forceFinish() {
+    if (!forceTable) return;
+    if (!forceNote.trim()) return toast.error("Nhập lý do cưỡng chế kết thúc");
+    setForceBusy(true);
+    const { error } = await createClient().rpc("admin_force_finish_interview", {
+      p_table_id: forceTable.id,
+      p_note: forceNote.trim(),
+    });
+    setForceBusy(false);
+    if (error) return toast.error(errorMessage(error));
+    toast.success("Đã cưỡng chế kết thúc và nộp phiếu điểm 10");
+    setForceTable(null);
+    setForceNote("");
+    router.refresh();
+  }
 
   return (
     <div className="space-y-6">
@@ -161,7 +187,7 @@ export function Dashboard({
             {busyTables.map((t) => {
               const c = t.current_candidate_id ? candById.get(t.current_candidate_id) : undefined;
               return (
-                <li key={t.id} className="flex items-center gap-3 py-2.5 text-sm">
+                <li key={t.id} className="flex flex-wrap items-center gap-3 py-2.5 text-sm">
                   <span className={cn("size-2.5 shrink-0 rounded-full", t.status === "INTERVIEWING" ? "bg-red-500" : "bg-amber-500")} />
                   <span className="w-32 shrink-0 truncate text-muted-foreground">
                     {roomName.get(t.room_id)} · {t.name}
@@ -171,6 +197,9 @@ export function Dashboard({
                     <Timer className="size-3.5 text-muted-foreground" />
                     <Elapsed since={t.status === "INTERVIEWING" ? t.started_at : t.assigned_at} />
                   </span>
+                  {t.status === "INTERVIEWING" && <Button size="xs" variant="destructive" onClick={() => { setForceTable(t); setForceNote(""); }}>
+                    <ShieldAlert /> Cưỡng chế kết thúc
+                  </Button>}
                 </li>
               );
             })}
@@ -178,6 +207,28 @@ export function Dashboard({
           </ul>
         </div>
       </div>
+      <Dialog open={!!forceTable} onOpenChange={(open) => { if (!open && !forceBusy) setForceTable(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Cưỡng chế kết thúc phỏng vấn?</DialogTitle>
+            <DialogDescription>
+              {forceTable && `${roomName.get(forceTable.room_id) ?? "Phòng"} · ${forceTable.name}`}
+              {" — hệ thống sẽ chấm tối đa 10 điểm cho mọi tiêu chí, lưu ghi chú dưới tên Admin hoặc Support IT và giải phóng bàn."}
+            </DialogDescription>
+          </DialogHeader>
+          <label className="grid gap-2 text-sm font-medium">
+            Ghi chú bắt buộc
+            <Textarea value={forceNote} maxLength={2000} rows={4} placeholder="Ví dụ: do quá giờ"
+              onChange={(event) => setForceNote(event.target.value)} disabled={forceBusy} />
+          </label>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setForceTable(null)} disabled={forceBusy}>Huỷ</Button>
+            <Button variant="destructive" onClick={() => void forceFinish()} disabled={forceBusy || !forceNote.trim()}>
+              {forceBusy ? "Đang nộp…" : "Xác nhận cưỡng chế"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

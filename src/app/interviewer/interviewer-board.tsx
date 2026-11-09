@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import type { RealtimeChannel, RealtimePostgresChangesPayload } from "@supabase/supabase-js";
 import { toast } from "sonner";
 import {
@@ -27,6 +28,7 @@ import type { DepartmentCode } from "@/lib/departments";
 import { SPECIALIZATIONS_BY_DEPARTMENT, specializationLabel, type SpecializationCode } from "@/lib/specializations";
 import { ScheduleFields, isFutureInterviewSlot } from "@/components/schedule-fields";
 import { makeInterviewShift } from "@/lib/interview-days";
+import { useInterviewDayAutoSwitch } from "@/hooks/use-interview-day-auto-switch";
 
 type Draft = { scores: Record<string, number>; comment: string; secondDepartment: DepartmentCode | ""; secondSpecialization: SpecializationCode | ""; secondDate: string; secondTime: string };
 
@@ -121,6 +123,8 @@ export function InterviewerBoard({
   rubric,
   interviewerName,
   selfId,
+  activeDay,
+  adminPreview = false,
 }: {
   tableId: string;
   initialTables: InterviewTable[];
@@ -130,7 +134,10 @@ export function InterviewerBoard({
   rubric: RubricCriterion[];
   interviewerName: string;
   selfId: string;
+  activeDay: string | null;
+  adminPreview?: boolean;
 }) {
+  useInterviewDayAutoSwitch(activeDay);
   const tbl = useRealtimeRows<InterviewTable>("tables", initialTables, "sort_order");
   const roomRows = useRealtimeRows<Room>("rooms", rooms, "sort_order");
   const cand = useRealtimeRows<Candidate>("candidates", initialCandidates);
@@ -286,9 +293,7 @@ export function InterviewerBoard({
     setBusy("submit");
     const { error } = await createClient().rpc("finish_external_challenge", { p_candidate_id: candidateToFinish.id });
     setBusy(null);
-    if (error) return toast.error(error.code === "PGRST202"
-      ? "Database chưa có chức năng xác nhận hoàn tất vòng 2. Chạy migration 20261114_department_challenge_modes.sql."
-      : errorMessage(error));
+    if (error) return toast.error(errorMessage(error));
     const finishedAt = new Date().toISOString();
     cand.patchRow(candidateToFinish.id, { status: "COMPLETED", challenge_status: "COMPLETED", interview_ended_at: finishedAt });
     toast.success(`Đã xác nhận hoàn tất phỏng vấn ${candidateToFinish.full_name}`);
@@ -301,9 +306,7 @@ export function InterviewerBoard({
     setBusy("pause");
     const { error } = await createClient().rpc("set_table_paused", { p_table_id: table.id, p_paused: paused });
     setBusy(null);
-    if (error) return toast.error(error.code === "PGRST202"
-      ? "Database chưa có chức năng tạm dừng bàn. Chạy migration 20261116_table_pause_support_chat.sql."
-      : errorMessage(error));
+    if (error) return toast.error(errorMessage(error));
     tbl.patchRow(table.id, { is_paused: paused });
     toast.success(paused ? "Bàn đã tạm dừng nhận thí sinh" : "Bàn đã mở lại tiếp nhận thí sinh");
   }
@@ -334,7 +337,7 @@ export function InterviewerBoard({
       }));
     }
     setBusy(null);
-    if (error) return toast.error(error.code === "PGRST202" ? `Database chưa cập nhật RPC ${room?.is_challenge ? "thử thách" : "Ban thứ hai"}. Chạy các migration mới nhất.` : errorMessage(error));
+    if (error) return toast.error(errorMessage(error));
     clearDraft(candidate.id);
     tbl.patchRow(tableId, { status: "AVAILABLE", current_candidate_id: null, assigned_at: null, started_at: null });
     const sendsToChallenge = !room?.is_challenge && (candidate.department === "HCTC" || (candidate.department === "VH" && room?.external_challenge));
@@ -407,6 +410,7 @@ export function InterviewerBoard({
   return (
     <div className="min-h-dvh bg-muted/30">
       <AppHeader title={tableLabel} mobileTitle={mobileTableLabel} subtitle={interviewerName} status={status}>
+        {adminPreview && <Link href="/admin/rooms" className="inline-flex h-9 shrink-0 items-center rounded-md border px-2 text-xs font-medium hover:bg-muted sm:px-3 sm:text-sm">Quản trị</Link>}
         {canPauseDesk && table && <Button variant={table.is_paused ? "default" : "outline"} size="sm" onClick={() => void toggleDeskPause()}
           disabled={busy !== null} aria-label={table.is_paused ? "Mở lại tiếp nhận thí sinh" : "Tạm dừng tiếp nhận thí sinh"}
           title={table.is_paused ? "Mở lại tiếp nhận" : "Tạm dừng tiếp nhận"} className="h-9 shrink-0 px-2 sm:px-3">
@@ -435,6 +439,10 @@ export function InterviewerBoard({
           </span>
         )}
       </AppHeader>
+
+      {adminPreview && <div className="border-b border-amber-300 bg-amber-50 px-4 py-2 text-center text-xs font-medium text-amber-950 dark:border-amber-900 dark:bg-amber-950/50 dark:text-amber-100 sm:text-sm">
+        Đang mở bàn bằng quyền Admin. Các thao tác tại đây sẽ cập nhật dữ liệu thật.
+      </div>}
 
       <Dialog open={chatOpen} onOpenChange={setChatOpen}>
         <DialogContent className="sm:max-w-lg">

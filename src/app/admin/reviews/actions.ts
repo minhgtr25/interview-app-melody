@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { isDepartmentCode, type DepartmentCode } from "@/lib/departments";
 import { generateReviewCode, hashReviewCode } from "@/lib/reviews/crypto";
 import { createServiceClient, getSessionProfile } from "@/lib/supabase/server";
+import { errorMessage } from "@/lib/format";
 
 type Result<T = undefined> = { ok: true; data?: T } | { ok: false; error: string };
 
@@ -32,7 +33,7 @@ export async function openReviewPortal(value: string): Promise<Result<{ departme
     revalidatePath(`/review/${value}`);
     return { ok: true, data: { department: value, code } };
   } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : "Không mở được cổng chấm" };
+    return { ok: false, error: errorMessage(error) };
   }
 }
 
@@ -48,6 +49,6 @@ export async function closeReviewPortal(value: string): Promise<Result> {
     revalidatePath(`/review/${value}`);
     return { ok: true };
   } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : "Không đóng được cổng chấm" };
+    return { ok: false, error: errorMessage(error) };
   }
 }

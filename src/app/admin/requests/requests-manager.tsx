@@ -22,7 +22,7 @@ export function RequestsManager({ initialRequests, candidates, profiles }: {
 }) {
   const requests = useRealtimeRows<ScheduleRequest>("schedule_requests", initialRequests);
   const liveCandidates = useRealtimeRows<Candidate>("candidates", candidates);
-  const [filter, setFilter] = useState<"PENDING" | "ALL">("PENDING");
+  const [filter, setFilter] = useState<ScheduleRequest["status"] | "">("PENDING");
   const [query, setQuery] = useState("");
   const [review, setReview] = useState<{ request: ScheduleRequest; approve: boolean } | null>(null);
   const [note, setNote] = useState("");
@@ -34,9 +34,22 @@ export function RequestsManager({ initialRequests, candidates, profiles }: {
   const candidateById = useMemo(() => new Map(liveCandidates.rows.map((item) => [item.id, item])), [liveCandidates.rows]);
   const profileById = useMemo(() => new Map(profiles.map((item) => [item.id, item])), [profiles]);
   const pending = requests.rows.filter((item) => item.status === "PENDING").length;
-  const filtered = requests.rows.filter((item) => (filter === "ALL" || item.status === "PENDING") &&
-    (!query || normalizeText(`${candidateById.get(item.candidate_id)?.full_name ?? ""} ${candidateById.get(item.candidate_id)?.code ?? ""} ${item.reason}`).includes(normalizeText(query))))
-    .sort((a, b) => a.status === b.status ? b.created_at.localeCompare(a.created_at) : a.status === "PENDING" ? -1 : 1);
+  const filtered = requests.rows.filter((item) => (!filter || item.status === filter) && (() => {
+    if (!query) return true;
+    const candidate = candidateById.get(item.candidate_id);
+    const sender = item.requested_by ? profileById.get(item.requested_by) : null;
+    return normalizeText(`${candidate?.full_name ?? ""} ${candidate?.code ?? ""} ${candidate?.student_number ?? ""} ${candidate?.phone ?? ""} ${candidate?.email ?? ""} ${candidate?.department ?? ""} ${item.reason} ${item.current_shift ?? ""} ${item.proposed_shift ?? ""} ${sender?.full_name ?? ""} ${sender?.email ?? ""}`)
+      .includes(normalizeText(query));
+  })()).sort((a, b) => {
+    if (a.status !== b.status) {
+      if (a.status === "PENDING") return -1;
+      if (b.status === "PENDING") return 1;
+    }
+    return b.created_at.localeCompare(a.created_at);
+  });
+  const statusLabel: Record<ScheduleRequest["status"] | "", string> = {
+    "": "Tất cả trạng thái", PENDING: "Chờ xử lý", APPROVED: "Đã duyệt", REJECTED: "Từ chối", RESOLVED: "Đã xếp lịch",
+  };
 
   async function decide() {
     if (!review) return;
@@ -70,13 +83,22 @@ export function RequestsManager({ initialRequests, candidates, profiles }: {
   return <section className="space-y-4">
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div><h1 className="text-2xl font-semibold">Yêu cầu</h1><p className="text-sm text-muted-foreground">{pending} yêu cầu đang chờ · Admin và Support IT cùng xử lý</p></div>
-      <div className="flex gap-2">
-        <Button variant={filter === "PENDING" ? "default" : "outline"} size="sm" onClick={() => setFilter("PENDING")}>Chờ xử lý</Button>
-        <Button variant={filter === "ALL" ? "default" : "outline"} size="sm" onClick={() => setFilter("ALL")}>Tất cả</Button>
+      <div className="flex items-center gap-2">
+        <label className="sr-only" htmlFor="request-status-filter">Lọc trạng thái yêu cầu</label>
+        <select id="request-status-filter" className="h-9 rounded-md border bg-background px-3 text-sm" value={filter}
+          onChange={(event) => setFilter(event.target.value as ScheduleRequest["status"] | "")}>
+          <option value="PENDING">Chờ xử lý ({pending})</option>
+          <option value="">Tất cả trạng thái</option>
+          {(["APPROVED", "REJECTED", "RESOLVED"] as const).map((status) => <option key={status} value={status}>{statusLabel[status]}</option>)}
+        </select>
       </div>
     </div>
-    <div className="relative max-w-md"><Search className="absolute left-3 top-3 size-4 text-muted-foreground" />
-      <Input className="pl-9" placeholder="Tìm tên, mã hoặc lý do" value={query} onChange={(event) => setQuery(event.target.value)} />
+    <div className="flex flex-col gap-2 rounded-xl border bg-card p-3 sm:flex-row">
+      <div className="relative min-w-0 flex-1"><Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+        <Input type="search" className="pl-9 pr-9" placeholder="Tìm tên, MSSV, mã, SĐT, Ban, ca hoặc lý do" value={query} onChange={(event) => setQuery(event.target.value)} aria-label="Tìm yêu cầu" />
+        {query && <Button type="button" variant="ghost" size="icon-xs" className="absolute right-2 top-1/2 -translate-y-1/2" aria-label="Xóa nội dung tìm kiếm" onClick={() => setQuery("")}><X /></Button>}
+      </div>
+      <span className="self-center text-xs text-muted-foreground" aria-live="polite">{filtered.length} yêu cầu</span>
     </div>
     <div className="grid gap-3">
       {filtered.map((item) => {

@@ -238,7 +238,7 @@ export function CandidatesManager({
         </div>
       </div>
 
-      <div className="flex flex-col gap-2 md:flex-row">
+      <div className="flex flex-col gap-2 rounded-xl border bg-card p-3 md:flex-row md:flex-wrap">
         <div className="relative flex-1">
           <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Tìm mã ứng viên, MSSV, tên, SĐT, email…" className="h-9 pl-9" />
@@ -256,6 +256,11 @@ export function CandidatesManager({
           {days.map((day) => <option key={day} value={day}>{dayLabel(day)}</option>)}
         </select>
         <DepartmentRadio name="candidate-filter-department" value={deptF} onChange={setDeptF} allowAll />
+        {(query || statusF || sourceF || dayF || deptF) && <Button type="button" variant="ghost" size="sm" className="shrink-0"
+          onClick={() => { setQuery(""); setStatusF(""); setSourceF(""); setDayF(""); setDeptF(""); }}>
+          <RotateCcw /> Xóa bộ lọc
+        </Button>}
+        <p className="w-full text-xs text-muted-foreground" aria-live="polite">Đang hiển thị {filtered.length}/{cand.rows.length} lượt phỏng vấn</p>
       </div>
 
       <div className="hidden overflow-hidden rounded-xl border bg-card lg:block">
