@@ -45,6 +45,7 @@ export interface InterviewTable {
 export interface OpsMessage {
   id: string;
   table_id: string;
+  candidate_id: string | null;
   sender_id: string | null;
   kind: "CHAT" | "ALARM";
   body: string;

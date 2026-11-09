@@ -136,6 +136,36 @@ export function CandidatesManager({
 
   const viewEval = viewing ? evalBy.get(viewing.id) : undefined;
 
+  const renderActions = (c: Candidate) => (
+    <div className="flex shrink-0 items-center justify-end gap-0.5">
+      <Button size="icon-sm" variant="ghost" title="Xem chi tiết" aria-label={`Xem ${c.full_name}`}
+        onClick={() => { setViewing(c); if (!criteria.length) void loadCriteria(); }}><Eye /></Button>
+      <Button size="icon-sm" variant="ghost" title="Sửa" aria-label={`Sửa ${c.full_name}`}
+        onClick={() => setEditing({
+          id: c.id,
+          data: { code: c.code, full_name: c.full_name, student_number: c.student_number ?? "", student_number_raw: c.student_number_raw,
+            student_cohort: c.student_cohort ?? "", gender: c.gender ?? "", facebook_url: c.facebook_url ?? "",
+            phone: c.phone ?? "", email: c.email ?? "", department: c.department ?? "", shift: c.shift ?? "", cv_url: c.cv_url ?? "" },
+        })}><Pencil /></Button>
+      <Button size="icon-sm" variant="ghost" title="Đưa về Chưa đến" aria-label={`Đặt lại ${c.full_name}`}
+        disabled={c.status === "NOT_ARRIVED"} onClick={() => setConfirm({ kind: "reset", c })}><RotateCcw /></Button>
+      <Button size="icon-sm" variant="ghost" title="Xoá thí sinh" aria-label={`Xoá ${c.full_name}`} className="text-red-600 hover:text-red-700"
+        onClick={() => setConfirm({ kind: "delete", c })}><Trash2 /></Button>
+    </div>
+  );
+
+  const renderStatus = (c: Candidate) => (
+    <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+      <StatusBadge status={c.status} />
+      {c.challenge_status && <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-semibold text-violet-800 dark:bg-violet-950 dark:text-violet-200">
+        {c.challenge_status === "WAITING" ? "Chờ thử thách" : c.challenge_status === "ASSIGNED" ? "Đã nhận thử thách" : c.challenge_status === "INTERVIEWING" ? "Đang thử thách" : "Đã xong thử thách"}
+      </span>}
+      {c.added_by_name && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-900" title={`Bổ sung bởi ${c.added_by_name}`}>
+        Check-in bổ sung
+      </span>}
+    </div>
+  );
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
@@ -176,23 +206,15 @@ export function CandidatesManager({
         <DepartmentRadio name="candidate-filter-department" value={deptF} onChange={setDeptF} allowAll />
       </div>
 
-      <div className="overflow-x-auto rounded-xl border bg-card">
-        <Table>
+      <div className="hidden overflow-hidden rounded-xl border bg-card lg:block">
+        <Table className="table-fixed">
           <TableHeader>
             <TableRow>
-              <TableHead>Mã</TableHead>
-              <TableHead>MSSV</TableHead>
-              <TableHead>Họ tên</TableHead>
-              <TableHead>Giới tính</TableHead>
-              <TableHead>Khóa</TableHead>
-              <TableHead>SĐT</TableHead>
-              <TableHead>Ban</TableHead>
-              <TableHead>Ca</TableHead>
-              <TableHead>Trạng thái</TableHead>
-              <TableHead>Người bổ sung</TableHead>
-              <TableHead className="text-right">Điểm TB</TableHead>
-              <TableHead className="text-right">Thời lượng</TableHead>
-              <TableHead className="w-40 text-right">Thao tác</TableHead>
+              <TableHead className="w-[36%]">Thí sinh</TableHead>
+              <TableHead className="w-[12%]">Ban</TableHead>
+              <TableHead className="w-[24%]">Trạng thái</TableHead>
+              <TableHead className="w-[10%] text-right">Kết quả</TableHead>
+              <TableHead className="w-[18%] text-right">Thao tác</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -201,60 +223,24 @@ export function CandidatesManager({
               const group = groupByCandidate.get(c.id);
               return (
                 <TableRow key={c.id}>
-                  <TableCell className="font-mono text-xs">{c.code}</TableCell>
-                  <TableCell className="font-mono text-xs">{c.student_number || (c.student_number_raw ? <span className="text-amber-700" title="MSSV cần xác minh">{c.student_number_raw} ⚠</span> : "—")}</TableCell>
-                  <TableCell className="font-medium">{c.full_name}{c.source_candidate_id && <span className="ml-2 rounded bg-violet-100 px-1.5 py-0.5 text-xs text-violet-800">Lượt 2 từ CM</span>}</TableCell>
-                  <TableCell>{GENDERS.find((gender) => gender.code === c.gender)?.name || "—"}</TableCell>
-                  <TableCell>{c.student_cohort || "—"}</TableCell>
-                  <TableCell className="tabular-nums">{c.phone}</TableCell>
-                  <TableCell>{group?.departments.join(" · ") || c.department}</TableCell>
-                  <TableCell className="max-w-40 truncate">{group?.shifts.join(" ; ") || c.shift}</TableCell>
-                  <TableCell><div className="flex flex-wrap items-center gap-1"><StatusBadge status={c.status} />{c.challenge_status && <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-semibold text-violet-800 dark:bg-violet-950 dark:text-violet-200">{c.challenge_status === "WAITING" ? "Chờ thử thách" : c.challenge_status === "ASSIGNED" ? "Đã nhận thử thách" : c.challenge_status === "INTERVIEWING" ? "Đang thử thách" : "Đã xong thử thách"}</span>}</div></TableCell>
-                  <TableCell className="min-w-44 text-xs">
-                    {c.added_by_name ? <>
-                      <span className="inline-block rounded-full bg-amber-100 px-2 py-0.5 font-semibold text-amber-900">{c.added_by_role === "CHECKIN" ? "Check-in bổ sung" : "Bổ sung tại Check-in"}</span>
-                      <span className="mt-1 block font-medium">{c.added_by_name}</span>
-                      {c.added_by_email && <span className="block text-muted-foreground">{c.added_by_email}</span>}
-                    </> : <span className="text-muted-foreground">—</span>}
+                  <TableCell className="whitespace-normal">
+                    <p className="break-words font-semibold">{c.full_name}{c.source_candidate_id && <span className="ml-1.5 inline-block rounded bg-violet-100 px-1.5 py-0.5 align-middle text-[10px] font-semibold text-violet-800">Lượt 2</span>}</p>
+                    <p className="mt-1 truncate font-mono text-xs text-muted-foreground">{c.code} · MSSV {c.student_number || c.student_number_raw || "—"}</p>
                   </TableCell>
-                  <TableCell className="text-right font-semibold tabular-nums">
-                    {e?.average_score != null ? Number(e.average_score).toFixed(2) : ""}
+                  <TableCell className="whitespace-normal text-sm">{group?.departments.join(" · ") || c.department || "—"}</TableCell>
+                  <TableCell className="whitespace-normal">{renderStatus(c)}</TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    <span className="font-semibold">{e?.average_score != null ? Number(e.average_score).toFixed(2) : "—"}</span>
+                    {c.duration_seconds != null && <span className="mt-0.5 block text-xs text-muted-foreground">{formatDuration(c.duration_seconds)}</span>}
                   </TableCell>
-                  <TableCell className="text-right font-mono text-xs tabular-nums">
-                    {c.duration_seconds != null ? formatDuration(c.duration_seconds) : ""}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex justify-end gap-0.5">
-                      <Button size="icon-sm" variant="ghost" title="Xem chi tiết" aria-label="Xem chi tiết"
-                        onClick={() => { setViewing(c); if (!criteria.length) void loadCriteria(); }}>
-                        <Eye />
-                      </Button>
-                      <Button size="icon-sm" variant="ghost" title="Sửa" aria-label="Sửa"
-                        onClick={() => setEditing({
-                          id: c.id,
-                          data: { code: c.code, full_name: c.full_name, student_number: c.student_number ?? "", student_number_raw: c.student_number_raw,
-                            student_cohort: c.student_cohort ?? "", gender: c.gender ?? "", facebook_url: c.facebook_url ?? "",
-                            phone: c.phone ?? "", email: c.email ?? "", department: c.department ?? "", shift: c.shift ?? "", cv_url: c.cv_url ?? "" },
-                        })}>
-                        <Pencil />
-                      </Button>
-                      <Button size="icon-sm" variant="ghost" title="Đưa về Chưa đến" aria-label="Đưa về Chưa đến"
-                        disabled={c.status === "NOT_ARRIVED"} onClick={() => setConfirm({ kind: "reset", c })}>
-                        <RotateCcw />
-                      </Button>
-                      <Button size="icon-sm" variant="ghost" title="Xoá" aria-label="Xoá" className="text-red-600"
-                        onClick={() => setConfirm({ kind: "delete", c })}>
-                        <Trash2 />
-                      </Button>
-                    </div>
-                  </TableCell>
+                  <TableCell>{renderActions(c)}</TableCell>
                 </TableRow>
               );
             })}
             {filtered.length === 0 && (
               <TableRow>
-                  <TableCell colSpan={13} className="py-10 text-center text-muted-foreground">
-                  {cand.rows.length ? "Không có thí sinh phù hợp bộ lọc." : "Chưa có thí sinh. Bấm “Import Excel” để nhập danh sách."}
+                <TableCell colSpan={5} className="py-10 text-center text-muted-foreground">
+                  {cand.rows.length ? "Không có thí sinh phù hợp bộ lọc." : "Chưa có thí sinh. Bấm ‘Import Excel’ để nhập danh sách."}
                 </TableCell>
               </TableRow>
             )}
@@ -262,6 +248,32 @@ export function CandidatesManager({
         </Table>
       </div>
 
+      <div className="space-y-2 lg:hidden">
+        {filtered.map((c) => {
+          const e = evalBy.get(c.id);
+          const group = groupByCandidate.get(c.id);
+          return (
+            <article key={c.id} className="rounded-xl border bg-card p-3 shadow-sm shadow-black/[0.03]">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="break-words font-semibold leading-snug">{c.full_name}{c.source_candidate_id && <span className="ml-1.5 inline-block rounded bg-violet-100 px-1.5 py-0.5 align-middle text-[10px] font-semibold text-violet-800">Lượt 2</span>}</p>
+                  <p className="mt-1 truncate font-mono text-xs text-muted-foreground">{c.code} · MSSV {c.student_number || c.student_number_raw || "—"}</p>
+                </div>
+                {renderActions(c)}
+              </div>
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-t pt-3 text-sm">
+                <p><span className="text-xs text-muted-foreground">Ban </span><span className="font-medium">{group?.departments.join(" · ") || c.department || "—"}</span></p>
+                <p className="text-right"><span className="font-semibold tabular-nums">{e?.average_score != null ? Number(e.average_score).toFixed(2) : "—"}</span>{c.duration_seconds != null && <span className="ml-2 text-xs text-muted-foreground">{formatDuration(c.duration_seconds)}</span>}</p>
+              </div>
+              <div className="mt-2">{renderStatus(c)}</div>
+              {c.added_by_name && <p className="mt-2 truncate text-xs text-muted-foreground">Bổ sung bởi {c.added_by_name}{c.added_by_email && <> · {c.added_by_email}</>}</p>}
+            </article>
+          );
+        })}
+        {filtered.length === 0 && <p className="rounded-xl border bg-card px-4 py-10 text-center text-sm text-muted-foreground">
+          {cand.rows.length ? "Không có thí sinh phù hợp bộ lọc." : "Chưa có thí sinh. Bấm ‘Import Excel’ để nhập danh sách."}
+        </p>}
+      </div>
       <div className="flex justify-end">
         <Button variant="ghost" className="text-red-600" onClick={() => setConfirm({ kind: "deleteAll" })} disabled={!cand.rows.length}>
           <Trash2 /> Xoá toàn bộ thí sinh & kết quả

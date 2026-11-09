@@ -155,10 +155,11 @@ export function InterviewerBoard({
   const [busy, setBusy] = useState<"start" | "submit" | "return" | null>(null);
   const [confirm, setConfirm] = useState<"submit" | "return" | null>(null);
   const [chatOpen, setChatOpen] = useState(false);
+  const [chatCandidateId, setChatCandidateId] = useState<string | undefined>();
   const [chatUnread, setChatUnread] = useState(false);
   const chatOpenRef = useRef(chatOpen);
   chatOpenRef.current = chatOpen;
-  function openChat() { setChatUnread(false); setChatOpen(true); }
+  function openChat(candidateThreadId?: string) { setChatUnread(false); setChatCandidateId(candidateThreadId); setChatOpen(true); }
 
   useEffect(() => {
     const client = createClient();
@@ -167,21 +168,22 @@ export function InterviewerBoard({
     void prepareRealtime().then(() => {
       if (!active) return;
       channel = client.channel(`interviewer-chat:${tableId}:${Math.random().toString(36).slice(2)}`)
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "ops_messages", filter: `table_id=eq.${tableId}` },
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "ops_messages" },
         (payload: RealtimePostgresChangesPayload<OpsMessage>) => {
           const message = payload.new as OpsMessage;
-          if (message.kind !== "CHAT" || message.sender_id === selfId || chatOpenRef.current) return;
+          const candidateThread = !!message.candidate_id && (completedAtTable.some(({ candidate: item }) => item?.id === message.candidate_id) || candidate?.id === message.candidate_id);
+          if ((message.table_id !== tableId && !candidateThread) || message.kind !== "CHAT" || message.sender_id === selfId || chatOpenRef.current) return;
           setChatUnread(true);
-          toast.info("Điều phối gửi tin nhắn", {
+          toast.info(message.candidate_id ? "Giám khảo bàn liên quan gửi tin nhắn" : "Điều phối gửi tin nhắn", {
             description: message.body,
             duration: 10000,
-            action: { label: "Mở chat", onClick: openChat },
+            action: { label: "Mở chat", onClick: () => openChat(message.candidate_id ?? undefined) },
           });
         })
       .subscribe();
     }).catch(() => { /* chat dialog can still load messages over REST */ });
     return () => { active = false; if (channel) void client.removeChannel(channel); };
-  }, [tableId, selfId]);
+  }, [tableId, selfId, completedAtTable, candidate?.id]);
 
   // Keep the assigned table in sync even when a Postgres Changes event is missed.
   useEffect(() => {
@@ -363,7 +365,7 @@ export function InterviewerBoard({
   return (
     <div className="min-h-dvh bg-muted/30">
       <AppHeader title={tableLabel} subtitle={interviewerName} status={status}>
-        <Button variant="outline" size="sm" onClick={openChat} aria-label="Chat với điều phối" title="Chat với điều phối" className="relative">
+        <Button variant="outline" size="sm" onClick={() => openChat(room?.is_challenge ? candidate?.id : undefined)} aria-label="Chat với điều phối" title="Chat với điều phối" className="relative">
           <MessageCircle /><span className="hidden md:inline">Chat</span>
           {chatUnread && <span className="absolute -right-1 -top-1 size-2.5 rounded-full bg-red-500" />}
         </Button>
@@ -384,8 +386,8 @@ export function InterviewerBoard({
 
       <Dialog open={chatOpen} onOpenChange={setChatOpen}>
         <DialogContent className="sm:max-w-lg">
-          <DialogHeader><DialogTitle>Chat với điều phối · {room?.name} - {table?.name}</DialogTitle></DialogHeader>
-          <OpsChat tableId={tableId} selfId={selfId} role="interviewer" />
+          <DialogHeader><DialogTitle>{chatCandidateId ? `Chat về thí sinh ${cand.rows.find((item) => item.id === chatCandidateId)?.full_name ?? ""}` : `Chat với điều phối · ${room?.name} - ${table?.name}`}</DialogTitle></DialogHeader>
+          <OpsChat tableId={tableId} selfId={selfId} role="interviewer" candidateId={chatCandidateId} />
         </DialogContent>
       </Dialog>
 
@@ -397,6 +399,7 @@ export function InterviewerBoard({
             <h2 className="mb-2 font-semibold">Thí sinh đã chuyển sang thử thách</h2>
             <ul className="space-y-2">
               {completedAtTable.slice(0, 5).map(({ evaluation, candidate: item }) => item && <li key={item.id} className="flex items-center justify-between gap-3 rounded-lg border bg-background px-3 py-2 text-sm">
+                <Button size="sm" variant="outline" onClick={() => openChat(item.id)}><MessageCircle /> Chat Debate</Button>
                 <span className="min-w-0 truncate font-medium">{item.full_name} · {evaluation.table_label}</span>
                 <span className="shrink-0 text-violet-700 dark:text-violet-300">{item.challenge_status === "COMPLETED" ? "Đã hoàn tất" : item.challenge_status === "INTERVIEWING" ? "Đang thử thách" : item.challenge_status === "ASSIGNED" ? "Đã nhận" : "Chờ thử thách"}</span>
               </li>)}

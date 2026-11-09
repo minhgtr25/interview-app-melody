@@ -38,9 +38,16 @@ function RoomFields({ form, setForm, judges, disabled, prefix }: {
   disabled: boolean;
   prefix: string;
 }) {
+  const selectedTables = form.tables.slice(0, form.count);
+  const challengeDepartment = selectedTables[0]?.department;
+  const canConfigureChallenge = (challengeDepartment === "VH" || challengeDepartment === "HCTC") &&
+    selectedTables.every((table) => table.department === challengeDepartment);
   const changeTable = (index: number, patch: Partial<TableSetup>) => setForm({
     ...form,
     tables: form.tables.map((table, i) => i === index ? { ...table, ...patch } : table),
+    ...(patch.department && form.isChallenge &&
+      (patch.department !== "VH" && patch.department !== "HCTC" || selectedTables.some((table, i) => i !== index && table.department !== patch.department))
+      ? { isChallenge: false } : {}),
   });
   return <div className="space-y-4">
     <div className="space-y-1.5">
@@ -65,12 +72,12 @@ function RoomFields({ form, setForm, judges, disabled, prefix }: {
         </div>
       </fieldset>
     </div>
-    <label className="flex items-start gap-2 rounded-lg border border-violet-300 bg-violet-50 p-3 text-sm dark:border-violet-900 dark:bg-violet-950/30">
+    {canConfigureChallenge && <label className="flex items-start gap-2 rounded-lg border border-violet-300 bg-violet-50 p-3 text-sm dark:border-violet-900 dark:bg-violet-950/30">
       <input type="checkbox" checked={form.isChallenge} disabled={disabled}
         onChange={(event) => setForm({ ...form, isChallenge: event.target.checked })} />
       <span><span className="block font-semibold">Phòng thử thách (Debate) · chỉ dành cho VH hoặc HCTC</span>
         <span className="text-muted-foreground">Điều phối xem được nhưng không thể gán thí sinh; Giám khảo tự nhận từ hàng chờ thử thách.</span></span>
-    </label>
+    </label>}
     {form.building && isRoomNumber(form.number) && <p className="text-sm font-semibold">Mã phòng: {roomCode(form.building, form.number)}</p>}
     <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
       {form.tables.slice(0, form.count).map((table, index) => <div key={index} className="space-y-3 rounded-lg border p-3">
@@ -80,7 +87,7 @@ function RoomFields({ form, setForm, judges, disabled, prefix }: {
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={table.createAccount} disabled={disabled}
             onChange={(event) => changeTable(index, { createAccount: event.target.checked, judgeId: "" })} />
-          Tạo tài khoản đại diện cho bàn
+          {form.isChallenge ? "Tạo tài khoản Giám khảo Debate cho bàn" : "Tạo tài khoản đại diện cho bàn"}
         </label>
         {!table.createAccount && <label className="grid gap-1 text-sm">Tài khoản đại diện có sẵn
           <select aria-label={`Tài khoản đại diện Bàn ${index + 1}`} className="h-9 rounded-lg border border-input bg-background px-2"

@@ -49,11 +49,11 @@ export async function createTableAccount(tableId: string): Promise<ActionResult<
     const admin = createServiceClient();
     const { data: table, error: tableError } = await admin.from("tables").select("id, room_id, name").eq("id", tableId).single();
     if (tableError || !table) throw tableError ?? new Error("Không tìm thấy bàn");
-    const { data: room, error: roomError } = await admin.from("rooms").select("name").eq("id", table.room_id).single();
+    const { data: room, error: roomError } = await admin.from("rooms").select("name,is_challenge").eq("id", table.room_id).single();
     if (roomError || !room) throw roomError ?? new Error("Không tìm thấy phòng");
     const email = `table-${table.id.slice(0, 8)}-${randomBytes(4).toString("hex")}@club.local`;
     const password = generateTablePassword();
-    const fullName = `Đại diện ${room.name} - ${table.name}`;
+    const fullName = `${room.is_challenge ? "Giám khảo thử thách" : "Đại diện"} ${room.name} - ${table.name}`;
     const { data, error } = await admin.auth.admin.createUser({
       email, password, email_confirm: true, user_metadata: { full_name: fullName },
     });

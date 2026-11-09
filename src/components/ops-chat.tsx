@@ -17,10 +17,11 @@ function mergeMessages(previous: OpsMessage[], incoming: OpsMessage[]) {
   return [...byId.values()].sort((a, b) => a.created_at.localeCompare(b.created_at)).slice(-100);
 }
 
-export function OpsChat({ tableId, selfId, role }: {
+export function OpsChat({ tableId, selfId, role, candidateId }: {
   tableId: string;
   selfId: string;
   role: "interviewer" | "coordinator";
+  candidateId?: string;
 }) {
   const [messages, setMessages] = useState<OpsMessage[]>([]);
   const [draft, setDraft] = useState("");
@@ -36,7 +37,9 @@ export function OpsChat({ tableId, selfId, role }: {
     setConnected(false);
     const client = createClient();
     const load = async () => {
-      const { data, error } = await client.from("ops_messages").select("*").eq("table_id", tableId)
+      let query = client.from("ops_messages").select("*");
+      query = candidateId ? query.eq("candidate_id", candidateId) : query.eq("table_id", tableId).is("candidate_id", null);
+      const { data, error } = await query
         .order("created_at", { ascending: false }).limit(100);
       if (!active) return;
       setLoading(false);
@@ -47,8 +50,8 @@ export function OpsChat({ tableId, selfId, role }: {
     let channel: RealtimeChannel | null = null;
     void prepareRealtime().then(() => {
       if (!active) return;
-      channel = client.channel(`chat:${tableId}:${Math.random().toString(36).slice(2)}`)
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "ops_messages", filter: `table_id=eq.${tableId}` },
+      channel = client.channel(`chat:${candidateId ?? tableId}:${Math.random().toString(36).slice(2)}`)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "ops_messages", filter: candidateId ? `candidate_id=eq.${candidateId}` : `table_id=eq.${tableId}` },
         (payload: RealtimePostgresChangesPayload<OpsMessage>) => setMessages((current) => mergeMessages(current, [payload.new as OpsMessage])))
       .subscribe((status: string) => {
         if (status === "SUBSCRIBED") { setConnected(true); void load(); }
@@ -57,7 +60,7 @@ export function OpsChat({ tableId, selfId, role }: {
     }).catch(() => { if (active) setConnected(false); });
     const poll = window.setInterval(() => { if (document.visibilityState === "visible") void load(); }, 5000);
     return () => { active = false; window.clearInterval(poll); if (channel) void client.removeChannel(channel); };
-  }, [tableId, retryKey]);
+  }, [tableId, candidateId, retryKey]);
 
   useEffect(() => {
     const box = scrollRef.current;
@@ -70,7 +73,7 @@ export function OpsChat({ tableId, selfId, role }: {
     if (!body || sending) return;
     setSending(true);
     const { data, error } = await createClient().from("ops_messages").insert({
-      table_id: tableId, sender_id: selfId, kind: "CHAT", body,
+      table_id: tableId, candidate_id: candidateId ?? null, sender_id: selfId, kind: "CHAT", body,
     }).select("*").single();
     setSending(false);
     if (error) return toast.error(errorMessage(error));
@@ -89,7 +92,7 @@ export function OpsChat({ tableId, selfId, role }: {
       {!loading && !loadError && messages.length === 0 && <p className="py-12 text-center text-sm text-muted-foreground">Chưa có tin nhắn.</p>}
       {messages.map((message) => {
         const mine = message.sender_id === selfId;
-        const label = message.kind === "ALARM" ? "Alarm" : mine ? "Bạn" : role === "interviewer" ? "Điều phối" : "Giám khảo";
+        const label = message.kind === "ALARM" ? "Alarm" : mine ? "Bạn" : candidateId ? "Giám khảo bàn còn lại" : role === "interviewer" ? "Điều phối" : "Giám khảo";
         return <div key={message.id} className={cn("max-w-[90%] rounded-lg border bg-background px-3 py-2 text-sm", mine && "ml-auto border-primary/40 bg-primary/5")}>
           <div className="mb-1 flex justify-between gap-3 text-xs text-muted-foreground">
             <span className="font-semibold">{label}</span>
