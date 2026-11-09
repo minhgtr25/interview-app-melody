@@ -352,7 +352,14 @@ export function CheckinBoard({
                 </div>
                 <StatusBadge status={c.status} />
               </div>
-              <Actions c={c} size="lg" />
+              {c.status === "NOT_ARRIVED" ? <div className="flex w-full gap-2">
+                <div className="min-w-0 flex-1"><Actions c={c} size="lg" /></div>
+                <Button variant="outline" className="h-12 shrink-0 px-3 text-red-700 hover:bg-red-50 hover:text-red-800 dark:text-red-300 dark:hover:bg-red-950/40"
+                  onClick={() => absent(c)} disabled={busyId === c.id} aria-label="Đánh vắng" title="Đánh vắng">
+                  {busyId === c.id ? <Loader2 className="animate-spin" /> : <UserX />}
+                  <span className="hidden sm:inline">Vắng</span>
+                </Button>
+              </div> : <Actions c={c} size="lg" />}
             </li>
           ))}
           {filtered.length === 0 && (
