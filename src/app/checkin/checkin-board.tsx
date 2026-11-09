@@ -299,22 +299,22 @@ export function CheckinBoard({
       </AppHeader>
 
       {/* Thanh tìm kiếm + lọc: sticky dưới header */}
-      <div className="sticky top-14 z-20 border-b bg-background/95 backdrop-blur">
-        <div className="mx-auto flex max-w-screen-2xl flex-col gap-2 px-3 py-3 sm:px-4 2xl:flex-row 2xl:items-center">
-          <div className="relative flex-1">
-            <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Tìm tên, MSSV, SĐT hoặc mã ứng viên…"
-              className="h-11 pl-9 text-base md:h-10 md:text-sm"
-              type="search"
-              enterKeyHint="search"
-            />
-            {query && <Button type="button" variant="ghost" size="icon-xs" className="absolute right-2 top-1/2 -translate-y-1/2"
-              aria-label="Xóa nội dung tìm kiếm" onClick={() => setQuery("")}><X /></Button>}
-          </div>
-          <div className="grid min-w-0 grid-cols-2 gap-2 md:grid-cols-3 2xl:flex">
+      <div className="sticky top-14 z-20 border-b bg-background/95 shadow-sm backdrop-blur">
+        <div className="mx-auto max-w-screen-2xl space-y-2 px-3 py-3 sm:px-4">
+          <div className="grid grid-cols-2 gap-2 lg:grid-cols-[minmax(240px,1.6fr)_minmax(150px,0.9fr)_minmax(180px,1.1fr)_minmax(160px,1fr)_auto]">
+            <div className="relative col-span-2 min-w-0 lg:col-span-1">
+              <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Tìm tên, MSSV, SĐT hoặc mã ứng viên…"
+                className="h-10 pl-9 pr-9 text-sm"
+                type="search"
+                enterKeyHint="search"
+              />
+              {query && <Button type="button" variant="ghost" size="icon-xs" className="absolute right-2 top-1/2 -translate-y-1/2"
+                aria-label="Xóa nội dung tìm kiếm" onClick={() => setQuery("")}><X /></Button>}
+            </div>
             <select className={cn(NATIVE_SELECT, "w-full min-w-0")} value={day} onChange={(event) => { setDay(event.target.value); setShift(""); }} aria-label="Lọc ngày phỏng vấn">
               <option value="">Mọi ngày</option>
               {days.map((value) => <option key={value} value={value}>{dayLabel(value)}</option>)}
@@ -336,12 +336,14 @@ export function CheckinBoard({
                 <option key={s} value={s}>{STATUS_LABEL[s]}</option>
               ))}
             </select>}
-            <div className="col-span-2 min-w-0 md:col-span-3"><DepartmentRadio name="checkin-department" value={dept} onChange={setDept} allowAll /></div>
+            {(query || day || shift || dept || statusFilter) && <Button type="button" variant="ghost" size="sm" className="justify-self-start lg:justify-self-end"
+              onClick={() => { setQuery(""); setDay(""); setShift(""); setDept(""); setStatusFilter(""); }}>
+              <RotateCcw /> Xóa bộ lọc
+            </Button>}
           </div>
-          {(query || day || shift || dept || statusFilter) && <Button type="button" variant="ghost" size="sm" className="self-start"
-            onClick={() => { setQuery(""); setDay(""); setShift(""); setDept(""); setStatusFilter(""); }}>
-            <RotateCcw /> Xóa bộ lọc
-          </Button>}
+          <div className="min-w-0">
+            <DepartmentRadio name="checkin-department" value={dept} onChange={setDept} allowAll />
+          </div>
         </div>
       </div>
 
