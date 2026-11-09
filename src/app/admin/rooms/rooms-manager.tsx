@@ -19,6 +19,7 @@ import { DEPARTMENTS, isDepartmentCode, type DepartmentCode } from "@/lib/depart
 import type { InterviewTable, Profile, Room } from "@/lib/types";
 import { assignRoomTableAccounts, createTableAccount, deleteAccount } from "@/app/admin/actions";
 import { SPECIALIZATIONS_BY_DEPARTMENT, isSpecializedDepartment, isSpecializationForDepartment, specializationLabel, type SpecializationCode } from "@/lib/specializations";
+import { dayLabel, todayInVietnam } from "@/lib/interview-days";
 
 type TableSetup = { department: DepartmentCode | ""; specialization: SpecializationCode | ""; createAccount: boolean; judgeId: string };
 type RoomForm = {
@@ -193,7 +194,7 @@ function ExistingRoom({ room, tables, profiles, busy, onSave, onDelete }: {
   </article>;
 }
 
-export function RoomsManager({ rooms, tables, profiles }: { rooms: Room[]; tables: InterviewTable[]; profiles: Profile[] }) {
+export function RoomsManager({ rooms, tables, profiles, activeDay }: { rooms: Room[]; tables: InterviewTable[]; profiles: Profile[]; activeDay: string }) {
   const router = useRouter();
   const [newForm, setNewForm] = useState<RoomForm>(emptyForm);
   const [busy, setBusy] = useState(false);
@@ -202,8 +203,10 @@ export function RoomsManager({ rooms, tables, profiles }: { rooms: Room[]; table
   const supabase = createClient();
   const judges = profiles.filter((profile) => profile.role === "INTERVIEWER");
   const unassignedJudges = judges.filter((judge) => !judge.table_id);
+  const dayReady = activeDay === todayInVietnam();
 
   async function saveRoom(existing: Room | null, form: RoomForm) {
+    if (!dayReady) return toast.error("Kích hoạt bố trí phòng cho ngày hôm nay trước khi sửa phòng/bàn đang hoạt động");
     if (!isBuildingCode(form.building) || !isRoomNumber(form.number))
       return toast.error("Số phòng phải thuộc 101–140, 201–240, 301–340 hoặc 401–440");
     const selected = form.tables.slice(0, form.count);
@@ -326,6 +329,7 @@ export function RoomsManager({ rooms, tables, profiles }: { rooms: Room[]; table
   }
 
   async function confirmDelete() {
+    if (!dayReady) return toast.error("Kích hoạt ngày hôm nay trước khi xóa phòng");
     if (!deleteRoom) return;
     const room = deleteRoom;
     setDeleteRoom(null);
@@ -341,14 +345,14 @@ export function RoomsManager({ rooms, tables, profiles }: { rooms: Room[]; table
 
   return <div className="space-y-6">
     <div>
-      <h2 className="text-lg font-semibold">Cấu hình Phòng & Bàn phỏng vấn</h2>
+      <h2 className="text-lg font-semibold">Cấu hình Phòng & Bàn đang hoạt động · {dayLabel(activeDay)}</h2>
       <p className="text-sm text-muted-foreground">Chọn Tòa, Số phòng, từ 1 đến 4 bàn, rồi chọn Ban và ngạch riêng cho từng bàn trước khi kích hoạt. Nhiều giám khảo có thể dùng chung máy của bàn; không cần cấp tài khoản riêng cho từng người.</p>
     </div>
 
     <section className="space-y-4 rounded-xl border bg-card p-4">
       <h3 className="font-semibold">Thêm phòng mới</h3>
-      <RoomFields form={newForm} setForm={setNewForm} judges={unassignedJudges} disabled={busy} prefix="new-room" />
-      <Button onClick={() => void saveRoom(null, newForm)} disabled={busy}>
+      <RoomFields form={newForm} setForm={setNewForm} judges={unassignedJudges} disabled={busy || !dayReady} prefix="new-room" />
+      <Button onClick={() => void saveRoom(null, newForm)} disabled={busy || !dayReady}>
         {busy ? <Loader2 className="animate-spin" /> : <Plus />} Thêm phòng và kích hoạt
       </Button>
     </section>
@@ -372,7 +376,7 @@ export function RoomsManager({ rooms, tables, profiles }: { rooms: Room[]; table
         <div className="grid gap-4 xl:grid-cols-2">
           {buildingRooms.map((room) => <ExistingRoom key={`${room.id}-${room.is_configured}-${room.name}`}
             room={room} tables={tables.filter((table) => table.room_id === room.id)} profiles={profiles}
-            busy={busy} onSave={(target, form) => saveRoom(target, form)} onDelete={setDeleteRoom} />)}
+            busy={busy || !dayReady} onSave={(target, form) => saveRoom(target, form)} onDelete={setDeleteRoom} />)}
         </div>
       </section>;
     })}
@@ -381,7 +385,7 @@ export function RoomsManager({ rooms, tables, profiles }: { rooms: Room[]; table
       <div className="grid gap-4 xl:grid-cols-2">
         {rooms.filter((room) => !room.building_code).map((room) => <ExistingRoom key={`${room.id}-${room.is_configured}`}
           room={room} tables={tables.filter((table) => table.room_id === room.id)} profiles={profiles}
-          busy={busy} onSave={(target, form) => saveRoom(target, form)} onDelete={setDeleteRoom} />)}
+          busy={busy || !dayReady} onSave={(target, form) => saveRoom(target, form)} onDelete={setDeleteRoom} />)}
       </div>
     </section>}
 

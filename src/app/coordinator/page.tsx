@@ -11,11 +11,12 @@ export default async function CoordinatorPage() {
   const profile = await requireRole(["COORDINATOR", "ADMIN"]);
   const supabase = await createClient();
   await supabase.rpc("activate_due_followups");
-  const [candidates, tables, rooms, profiles] = await Promise.all([
+  const [candidates, tables, rooms, profiles, dayState] = await Promise.all([
     fetchAll<Candidate>(supabase, "candidates"),
     fetchAll<InterviewTable>(supabase, "tables", "sort_order"),
     fetchAll<Room>(supabase, "rooms", "sort_order"),
     fetchAll<Profile>(supabase, "profiles"),
+    supabase.from("interview_day_state").select("id,day").eq("id", "main").maybeSingle(),
   ]);
   return (
     <ClockProvider>
@@ -27,6 +28,7 @@ export default async function CoordinatorPage() {
         staffName={profile.full_name || profile.email}
         selfId={profile.id}
         chatIdentity={profile.role === "SUPPORT_IT" ? "support" : "coordinator"}
+        initialDayState={dayState.data ? [dayState.data] : []}
       />
     </ClockProvider>
   );

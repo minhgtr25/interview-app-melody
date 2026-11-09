@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import { useOpsChannel } from "@/hooks/use-ops-channel";
 import { AppHeader } from "@/components/app-header";
-import { Elapsed } from "@/components/clock";
+import { Elapsed, useServerNow } from "@/components/clock";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -25,8 +25,10 @@ import { cn } from "@/lib/utils";
 import { DepartmentRadio } from "@/components/department-radio";
 import type { DepartmentCode } from "@/lib/departments";
 import { SPECIALIZATIONS_BY_DEPARTMENT, specializationLabel, type SpecializationCode } from "@/lib/specializations";
+import { ScheduleFields, isFutureInterviewSlot } from "@/components/schedule-fields";
+import { makeInterviewShift } from "@/lib/interview-days";
 
-type Draft = { scores: Record<string, number>; comment: string; secondDepartment: DepartmentCode | ""; secondSpecialization: SpecializationCode | "" };
+type Draft = { scores: Record<string, number>; comment: string; secondDepartment: DepartmentCode | ""; secondSpecialization: SpecializationCode | ""; secondDate: string; secondTime: string };
 
 const draftKey = (candidateId: string) => `eval-draft:${candidateId}`;
 
@@ -35,12 +37,12 @@ function loadDraft(candidateId: string): Draft {
     const raw = localStorage.getItem(draftKey(candidateId));
     if (raw) {
       const d = JSON.parse(raw) as Draft;
-      if (d && typeof d === "object" && d.scores) return { scores: d.scores, comment: d.comment ?? "", secondDepartment: d.secondDepartment ?? "", secondSpecialization: d.secondSpecialization ?? "" };
+      if (d && typeof d === "object" && d.scores) return { scores: d.scores, comment: d.comment ?? "", secondDepartment: d.secondDepartment ?? "", secondSpecialization: d.secondSpecialization ?? "", secondDate: d.secondDate ?? "", secondTime: d.secondTime ?? "" };
     }
   } catch {
     /* storage bị chặn */
   }
-  return { scores: {}, comment: "", secondDepartment: "", secondSpecialization: "" };
+  return { scores: {}, comment: "", secondDepartment: "", secondSpecialization: "", secondDate: "", secondTime: "" };
 }
 
 function saveDraft(candidateId: string, d: Draft) {
@@ -152,7 +154,8 @@ export function InterviewerBoard({
 
   const status = tbl.status === "live" && cand.status === "live" ? "live" : tbl.status === "offline" || cand.status === "offline" ? "offline" : "connecting";
 
-  const [draft, setDraft] = useState<Draft>({ scores: {}, comment: "", secondDepartment: "", secondSpecialization: "" });
+  const [draft, setDraft] = useState<Draft>({ scores: {}, comment: "", secondDepartment: "", secondSpecialization: "", secondDate: "", secondTime: "" });
+  const serverNow = useServerNow(30_000);
   const [busy, setBusy] = useState<"start" | "submit" | "return" | "pause" | null>(null);
   const [confirm, setConfirm] = useState<"submit" | "return" | null>(null);
   const [roundTwoOpen, setRoundTwoOpen] = useState(true);
@@ -219,7 +222,7 @@ export function InterviewerBoard({
   // Nạp nháp khi đổi thí sinh (giữ điểm nếu lỡ tải lại trang)
   const candId = candidate?.id;
   useEffect(() => {
-    setDraft(candId ? loadDraft(candId) : { scores: {}, comment: "", secondDepartment: "", secondSpecialization: "" });
+    setDraft(candId ? loadDraft(candId) : { scores: {}, comment: "", secondDepartment: "", secondSpecialization: "", secondDate: "", secondTime: "" });
   }, [candId]);
 
   // Thông báo khi có thí sinh mới được gán
@@ -310,6 +313,8 @@ export function InterviewerBoard({
     if (!candidate) return;
     if (candidate.department === "CM" && table?.department === "CM" && draft.secondDepartment === "TT" && !draft.secondSpecialization)
       return toast.error("Chọn ngạch Truyền Thông cho lượt phỏng vấn thứ hai");
+    if (draft.secondDepartment && (draft.secondDate || draft.secondTime) && !isFutureInterviewSlot(draft.secondDate, draft.secondTime, serverNow))
+      return toast.error("Ca Ban thứ hai cần đủ ngày giờ chưa qua theo giờ Hà Nội");
     setBusy("submit");
     const client = createClient();
     let { error } = room?.is_challenge
@@ -320,6 +325,8 @@ export function InterviewerBoard({
       p_comment: draft.comment,
       p_second_department: candidate.department === "CM" && table?.department === "CM" ? draft.secondDepartment || null : null,
       p_second_specialization: candidate.department === "CM" && table?.department === "CM" && draft.secondDepartment === "TT" ? draft.secondSpecialization || null : null,
+      p_second_shift: candidate.department === "CM" && table?.department === "CM" && draft.secondDepartment && draft.secondDate && draft.secondTime
+        ? makeInterviewShift(draft.secondDate, draft.secondTime, draft.secondDepartment) : null,
     });
     if (error?.code === "PGRST202" && !draft.secondDepartment && !room?.is_challenge) {
       ({ error } = await client.rpc("submit_evaluation", {
@@ -601,9 +608,9 @@ export function InterviewerBoard({
               {candidate.department === "CM" && table.department === "CM" && !candidate.source_candidate_id && (
                 <div className="rounded-2xl border bg-card p-4">
                   <p className="mb-1 font-semibold">Nguyện vọng phỏng vấn Ban thứ hai</p>
-                  <p className="mb-3 text-sm text-muted-foreground">Chỉ chọn khi thí sinh Chuyên Môn muốn phỏng vấn thêm nếu không đỗ Chuyên Môn. Sau khi nộp, thí sinh sẽ xuất hiện ở hàng chờ Điều phối của Ban đã chọn.</p>
+                  <p className="mb-3 text-sm text-muted-foreground">Chọn Ban thứ hai và lịch nếu thí sinh đã chốt. Chưa chốt lịch thì Điều phối sẽ nhận lượt có dấu ? để sắp xếp sau.</p>
                   <DepartmentRadio name={`second-department-${candidate.id}`} value={draft.secondDepartment}
-                    onChange={(value) => update({ secondDepartment: value, secondSpecialization: "" })} allowAll noneLabel="Không có Ban thứ hai" exclude="CM" />
+                    onChange={(value) => update({ secondDepartment: value, secondSpecialization: "", secondDate: "", secondTime: "" })} allowAll noneLabel="Không có Ban thứ hai" exclude="CM" />
                   {draft.secondDepartment === "TT" && <label className="mt-3 grid gap-1.5 text-sm font-medium">Ngạch Truyền Thông
                     <select className="h-9 rounded-lg border border-input bg-background px-3" value={draft.secondSpecialization}
                       onChange={(event) => update({ secondSpecialization: event.target.value as SpecializationCode | "" })}>
@@ -611,6 +618,13 @@ export function InterviewerBoard({
                       {SPECIALIZATIONS_BY_DEPARTMENT.TT.map((item) => <option key={item.code} value={item.code}>{item.name}</option>)}
                     </select>
                   </label>}
+                  {draft.secondDepartment && <div className="mt-4 space-y-2 border-t pt-4">
+                    <p className="text-sm font-semibold">Lịch Ban thứ hai <span className="font-normal text-muted-foreground">· để trống nếu chưa chốt</span></p>
+                    {cand.rows.find((item) => item.source_candidate_id === candidate.id)?.shift && <p className="text-sm text-muted-foreground">Lịch đã nhập: {cand.rows.find((item) => item.source_candidate_id === candidate.id)?.shift}. Để trống sẽ giữ lịch này.</p>}
+                    <ScheduleFields idPrefix="interviewer-followup" candidates={cand.rows} department={draft.secondDepartment}
+                      date={draft.secondDate} time={draft.secondTime}
+                      onDateChange={(secondDate) => update({ secondDate })} onTimeChange={(secondTime) => update({ secondTime })} />
+                  </div>}
                 </div>
               )}
             </section>

@@ -108,6 +108,22 @@ export interface Candidate {
   updated_at: string;
 }
 
+export interface ScheduleRequest {
+  id: string;
+  candidate_id: string;
+  kind: "RESCHEDULE" | "FOLLOWUP_UNDECIDED";
+  current_shift: string | null;
+  proposed_shift: string | null;
+  reason: string;
+  status: "PENDING" | "APPROVED" | "REJECTED" | "RESOLVED";
+  requested_by: string | null;
+  requested_role: UserRole | null;
+  reviewed_by: string | null;
+  review_note: string;
+  created_at: string;
+  reviewed_at: string | null;
+}
+
 export interface RubricCriterion {
   id: string;
   name: string;

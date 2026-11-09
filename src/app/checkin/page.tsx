@@ -2,6 +2,7 @@ import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { fetchAll } from "@/lib/fetch-all";
 import type { Candidate } from "@/lib/types";
+import { ClockProvider } from "@/components/clock";
 import { CheckinBoard } from "./checkin-board";
 
 export const dynamic = "force-dynamic";
@@ -11,5 +12,5 @@ export default async function CheckinPage() {
   const supabase = await createClient();
   await supabase.rpc("activate_due_followups");
   const candidates = await fetchAll<Candidate>(supabase, "candidates");
-  return <CheckinBoard initialCandidates={candidates} staffName={profile.full_name || profile.email} />;
+  return <ClockProvider><CheckinBoard initialCandidates={candidates} staffName={profile.full_name || profile.email} /></ClockProvider>;
 }

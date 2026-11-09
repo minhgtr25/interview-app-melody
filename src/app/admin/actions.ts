@@ -325,9 +325,17 @@ export async function importSchedules(rows: { student_number: string | null; ema
     if (clean.some((row) => (!row.student_number && !row.email) || !row.shift || row.shift.length > 100)) {
       throw new Error("Có dòng lịch thiếu thông tin nhận diện hoặc Ca không hợp lệ");
     }
-    const { data, error } = await (await createClient()).rpc("import_candidate_schedules", { p_rows: clean });
+    const client = await createClient();
+    // Old database versions concatenate multiple departments into one Ca.
+    // Require the new schedule RPC before writing any rows.
+    const probe = await client.rpc("update_candidate_schedules", { p_updates: [] });
+    if (probe.error?.code === "PGRST202" || probe.error?.code === "42883") {
+      throw new Error("Database chưa cập nhật. Chạy migration 20261119_interview_days.sql trước khi nhập lịch.");
+    }
+    if (probe.error && probe.error.code !== "P0001") throw probe.error;
+    const { data, error } = await client.rpc("import_candidate_schedules", { p_rows: clean });
     if (error) {
-      if (error.code === "PGRST202") throw new Error("Database chưa cập nhật. Chạy migration 20261108_departments_and_referrals.sql trước khi nhập lịch.");
+      if (error.code === "PGRST202") throw new Error("Database chưa cập nhật. Chạy migration 20261119_interview_days.sql trước khi nhập lịch.");
       throw error;
     }
     revalidatePath("/admin/candidates");

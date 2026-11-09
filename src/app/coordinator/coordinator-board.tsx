@@ -4,11 +4,12 @@ import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { RealtimeChannel, RealtimePostgresChangesPayload } from "@supabase/supabase-js";
 import { toast } from "sonner";
-import { GripVertical, Loader2, UserX, Undo2, ArrowRightLeft, CircleCheck, Timer, Hourglass, MessageCircle, X, BellRing, Search, ClipboardList, Pause } from "lucide-react";
+import { GripVertical, Loader2, UserX, Undo2, ArrowRightLeft, CircleCheck, Timer, Hourglass, MessageCircle, X, BellRing, Search, ClipboardList, Pause, CalendarClock } from "lucide-react";
 import { AppHeader } from "@/components/app-header";
-import { Elapsed } from "@/components/clock";
+import { Elapsed, useServerNow } from "@/components/clock";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { OpsChat } from "@/components/ops-chat";
@@ -33,9 +34,13 @@ import { isSpecializationForDepartment, isSpecializedDepartment, specializationL
 import type { DepartmentCode } from "@/lib/departments";
 import { DepartmentRadio } from "@/components/department-radio";
 import { groupCandidateApplications } from "@/components/candidate-applications";
+import { dayLabel, interviewDate, interviewDays, todayInVietnam } from "@/lib/interview-days";
+import { makeInterviewShift } from "@/lib/interview-days";
+import { ScheduleFields, isFutureInterviewSlot } from "@/components/schedule-fields";
+import { ScheduleRequestDialog } from "@/components/schedule-request-dialog";
+import { AbsenceManagerDialog } from "@/components/absence-manager-dialog";
 
 type Confirm =
-  | { kind: "absent"; candidate: Candidate }
   | { kind: "release"; table: InterviewTable; candidate?: Candidate }
   | null;
 
@@ -47,6 +52,7 @@ export function CoordinatorBoard({
   staffName,
   selfId,
   chatIdentity,
+  initialDayState,
 }: {
   initialCandidates: Candidate[];
   initialTables: InterviewTable[];
@@ -55,11 +61,14 @@ export function CoordinatorBoard({
   staffName: string;
   selfId: string;
   chatIdentity: "coordinator" | "support";
+  initialDayState: { id: string; day: string }[];
 }) {
   const cand = useRealtimeRows<Candidate>("candidates", initialCandidates);
   const tbl = useRealtimeRows<InterviewTable>("tables", initialTables, "sort_order");
   const roomRows = useRealtimeRows<Room>("rooms", rooms, "sort_order");
   const profileRows = useRealtimeRows<Profile>("profiles", profiles);
+  const dayState = useRealtimeRows<{ id: string; day: string }>("interview_day_state", initialDayState, "day");
+  const dayReady = !dayState.rows.length || dayState.rows[0].day === todayInVietnam();
   const interviewerTableIds = useMemo(() => new Set(profileRows.rows
     .filter((profile) => profile.role === "INTERVIEWER" && profile.table_id)
     .map((profile) => profile.table_id!)), [profileRows.rows]);
@@ -67,8 +76,17 @@ export function CoordinatorBoard({
   const [dragOverTable, setDragOverTable] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<Confirm>(null);
+  const [absenceOpen, setAbsenceOpen] = useState(false);
+  const [markAbsentCandidate, setMarkAbsentCandidate] = useState<Candidate | null>(null);
+  const [markAbsentNote, setMarkAbsentNote] = useState("");
+  const [requestCandidate, setRequestCandidate] = useState<Candidate | null>(null);
+  const [followupCandidate, setFollowupCandidate] = useState<Candidate | null>(null);
+  const [followupDate, setFollowupDate] = useState("");
+  const [followupTime, setFollowupTime] = useState("");
+  const now = useServerNow(30_000);
   const [tab, setTab] = useState<string>("queue");
   const [queueDepartment, setQueueDepartment] = useState<DepartmentCode | "">("");
+  const [queueDay, setQueueDay] = useState(() => interviewDays(initialCandidates).includes(todayInVietnam()) ? todayInVietnam() : "");
   const [queueSearch, setQueueSearch] = useState("");
   const deferredQueueSearch = normalizeText(useDeferredValue(queueSearch));
   const [chatTableId, setChatTableId] = useState<string | null>(null);
@@ -78,6 +96,19 @@ export function CoordinatorBoard({
   const tablesRef = useRef(tbl.rows);
   const roomsRef = useRef(roomRows.rows);
   const chatTableIdRef = useRef(chatTableId);
+
+  useEffect(() => {
+    let previous = todayInVietnam();
+    const timer = window.setInterval(() => {
+      const current = todayInVietnam();
+      if (current !== previous) {
+        setQueueDay((selected) => selected === previous ? current : selected);
+        setSelectedId(null);
+        previous = current;
+      }
+    }, 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
   tablesRef.current = tbl.rows;
   roomsRef.current = roomRows.rows;
   chatTableIdRef.current = chatTableId;
@@ -164,13 +195,14 @@ export function CoordinatorBoard({
     }
     return map;
   }, [cand.rows]);
+  const days = useMemo(() => interviewDays(cand.rows), [cand.rows]);
 
   useEffect(() => {
     const incoming = cand.rows.filter((c) => c.source_candidate_id && c.status === "CHECKED_IN" && !c.challenge_status);
     if (seenSecondInterviews.current) {
       for (const candidate of incoming) if (!seenSecondInterviews.current.has(candidate.id)) {
-        toast.info(`Có lượt phỏng vấn Ban thứ hai: ${candidate.department}`, {
-          description: `${candidate.full_name} đã được Giám khảo Chuyên Môn chuyển sang hàng chờ.`, duration: 12000,
+        toast.info(`Có lượt phỏng vấn Ban ${candidate.department}`, {
+          description: `${candidate.full_name} đã vào hàng chờ phỏng vấn Ban ${candidate.department}.`, duration: 12000,
         });
       }
     }
@@ -181,9 +213,10 @@ export function CoordinatorBoard({
     () =>
       cand.rows
         .filter((c) => c.status === "CHECKED_IN" && !c.challenge_status && (!queueDepartment || c.department === queueDepartment)
-          && (!deferredQueueSearch || normalizeText(`${c.full_name} ${c.code} ${c.student_number ?? ""} ${c.phone ?? ""}`).includes(deferredQueueSearch)))
+          && (!queueDay || interviewDate(c) === queueDay || !interviewDate(c))
+          && (!deferredQueueSearch || normalizeText(`${c.full_name} ${c.code} ${c.student_number ?? groupByCandidate.get(c.id)?.primary.student_number ?? ""} ${c.phone ?? ""}`).includes(deferredQueueSearch)))
         .sort((a, b) => (a.checked_in_at ?? "").localeCompare(b.checked_in_at ?? "")),
-    [cand.rows, queueDepartment, deferredQueueSearch]
+    [cand.rows, queueDepartment, queueDay, deferredQueueSearch, groupByCandidate]
   );
 
   const grouped = useMemo(() => {
@@ -212,14 +245,16 @@ export function CoordinatorBoard({
     if (!interviewerTableIds.has(table.id)) return "Chưa gán tài khoản Giám khảo";
     return null;
   }
-  const freeCount = tbl.rows.filter((t) => t.status === "AVAILABLE" && !t.is_paused && roomById.get(t.room_id)?.is_configured && !roomById.get(t.room_id)?.is_challenge && !tableConfigurationIssue(t)).length;
+  const freeCount = dayReady ? tbl.rows.filter((t) => t.status === "AVAILABLE" && !t.is_paused && roomById.get(t.room_id)?.is_configured && !roomById.get(t.room_id)?.is_challenge && !tableConfigurationIssue(t)).length : 0;
   const selected = selectedId ? candById.get(selectedId) : undefined;
   // Bỏ chọn nếu thí sinh đã rời hàng chờ (do người khác gán)
-  const selectedValid = selected && selected.status === "CHECKED_IN" ? selected : undefined;
+  const selectedValid = selected && queue.some((candidate) => candidate.id === selected.id) ? selected : undefined;
 
   async function assign(candidateId: string, table: InterviewTable) {
+    if (!dayReady) return toast.error("Admin cần kích hoạt bố trí phòng cho ngày hôm nay");
     const c = candById.get(candidateId);
-    if (!c || c.status !== "CHECKED_IN") return toast.error("Thí sinh không còn ở hàng chờ");
+    if (!c || !queue.some((candidate) => candidate.id === c.id)) return toast.error("Thí sinh không còn ở hàng chờ của ngày đã chọn");
+    if (c.source_candidate_id && !c.shift) return toast.error("Cần xếp Ca Ban thứ hai trước khi đẩy thí sinh vào bàn");
     if (table.status !== "AVAILABLE") return toast.error("Bàn này đang bận");
     if (table.is_paused) return toast.error("Bàn này đang tạm dừng nhận thí sinh");
     if (roomById.get(table.room_id)?.is_challenge) return toast.error("Bàn thử thách do Giám khảo tự nhận thí sinh");
@@ -250,26 +285,48 @@ export function CoordinatorBoard({
     if (!confirm) return;
     const action = confirm;
     setConfirm(null);
-    if (action.kind === "absent") {
-      setBusy(action.candidate.id);
-      const { error } = await createClient().rpc("mark_absent", { p_candidate_id: action.candidate.id });
-      setBusy(null);
-      if (error) return toast.error(errorMessage(error));
-      if (selectedId === action.candidate.id) setSelectedId(null);
-      toast.success(`Đã đánh vắng: ${action.candidate.full_name}`);
-    } else {
-      setBusy(action.table.id);
-      const { error } = await createClient().rpc("return_to_queue", { p_table_id: action.table.id });
-      setBusy(null);
-      if (error) return toast.error(errorMessage(error));
-      toast.success(`Đã giải phóng ${action.table.name}`);
-    }
+    setBusy(action.table.id);
+    const { error } = await createClient().rpc("return_to_queue", { p_table_id: action.table.id });
+    setBusy(null);
+    if (error) return toast.error(errorMessage(error));
+    toast.success(`Đã giải phóng ${action.table.name}`);
+  }
+
+  async function saveAbsent(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!markAbsentCandidate) return;
+    const candidate = markAbsentCandidate;
+    setBusy(candidate.id);
+    const { error } = await createClient().rpc("mark_absent_with_note", { p_candidate_id: candidate.id, p_note: markAbsentNote });
+    setBusy(null);
+    if (error) return toast.error(errorMessage(error));
+    if (selectedId === candidate.id) setSelectedId(null);
+    setMarkAbsentCandidate(null);
+    void cand.refetch();
+    toast.success(`Đã đánh vắng: ${candidate.full_name}`);
+  }
+
+  async function saveFollowup(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!followupCandidate?.department || !isFutureInterviewSlot(followupDate, followupTime, now)) return;
+    setBusy(followupCandidate.id);
+    const { error } = await createClient().rpc("set_followup_schedule", {
+      p_candidate_id: followupCandidate.id,
+      p_shift: makeInterviewShift(followupDate, followupTime, followupCandidate.department),
+    });
+    setBusy(null);
+    if (error) return toast.error(errorMessage(error));
+    setFollowupCandidate(null);
+    void cand.refetch();
+    toast.success(followupDate === todayInVietnam(now) ? "Đã xếp Ca hôm nay; thí sinh ở lại hàng chờ" : "Đã chuyển lượt Ban thứ hai sang ngày đã chọn");
   }
 
   function onTableClick(t: InterviewTable) {
+    if (!dayReady) return toast.info("Admin cần kích hoạt bố trí phòng cho ngày hôm nay");
     if (roomById.get(t.room_id)?.is_challenge) return;
     if (t.is_paused) return toast.info("Bàn này đang tạm dừng tiếp nhận");
     if (t.status !== "AVAILABLE") return;
+    if (selectedValid?.source_candidate_id && !selectedValid.shift) return toast.info("Điều chỉnh lịch Ban thứ hai trước khi gán bàn");
     if (!selectedValid) {
       toast.info("Chọn một thí sinh trong hàng chờ trước");
       setTab("queue");
@@ -291,6 +348,11 @@ export function CoordinatorBoard({
         </span>
       </div>
       <div className="space-y-2 border-b px-3 py-2">
+        <select className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm" value={queueDay}
+          onChange={(event) => { setQueueDay(event.target.value); setSelectedId(null); }} aria-label="Lọc hàng chờ theo ngày phỏng vấn">
+          <option value="">Mọi ngày phỏng vấn</option>
+          {days.map((day) => <option key={day} value={day}>{dayLabel(day)}</option>)}
+        </select>
         <div className="relative"><Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input type="search" value={queueSearch} onChange={(event) => setQueueSearch(event.target.value)}
             className="pl-9" placeholder="Tìm tên, mã hoặc SĐT thí sinh…" aria-label="Tìm thí sinh trong hàng chờ" />
@@ -303,7 +365,7 @@ export function CoordinatorBoard({
           return (
             <li
               key={c.id}
-              draggable
+              draggable={!(c.source_candidate_id && !c.shift)}
               onDragStart={(e) => {
                 e.dataTransfer.setData("text/plain", c.id);
                 e.dataTransfer.effectAllowed = "move";
@@ -323,21 +385,25 @@ export function CoordinatorBoard({
                 {i + 1}
               </span>
               <div className="min-w-0 flex-1">
-                <p className="truncate font-medium">{c.full_name}</p>
+                 <p className="truncate font-medium">{c.full_name} {c.source_candidate_id && !c.shift && <span title="Chưa chốt lịch Ban thứ hai" className="ml-1 inline-flex size-5 items-center justify-center rounded-full bg-amber-500 text-xs font-bold text-white">?</span>}</p>
                 {(c.source_candidate_id || (groupByCandidate.get(c.id)?.applications?.length ?? 0) > 1) && (
-                  <p className="text-xs font-semibold text-violet-700 dark:text-violet-300">Ban thứ hai của cùng thí sinh</p>
+                  <p className="text-xs font-semibold text-violet-700 dark:text-violet-300">Lượt phỏng vấn Ban khác của cùng thí sinh</p>
                 )}
                 <p className="truncate text-xs text-muted-foreground">
                   <span className="font-mono">{c.code}</span>
-                  {c.student_number && <span className="font-mono"> · MSSV {c.student_number}</span>}
+                  {(c.student_number || groupByCandidate.get(c.id)?.primary.student_number) && <span className="font-mono"> · MSSV {c.student_number || groupByCandidate.get(c.id)?.primary.student_number}</span>}
                   {c.department && ` · ${c.department}`}{c.specialization && ` · ${specializationLabel(c.specialization)}`}
                 </p>
+                {c.shift && <p className="truncate text-xs text-muted-foreground">Ca {c.shift}</p>}
               </div>
               <div className="flex shrink-0 flex-col items-end gap-1">
                 <span className="inline-flex items-center gap-1 text-xs text-muted-foreground tabular-nums" title="Thời gian chờ">
                   <Hourglass className="size-3" />
                   <Elapsed since={c.checked_in_at} />
                 </span>
+                {c.source_candidate_id && !c.shift && <Button variant="outline" size="xs" onClick={(event) => {
+                  event.stopPropagation(); setFollowupCandidate(c); setFollowupDate(todayInVietnam(now)); setFollowupTime("");
+                }}><CalendarClock /> Điều chỉnh lịch</Button>}
                 <Button
                   variant="ghost"
                   size="xs"
@@ -345,7 +411,7 @@ export function CoordinatorBoard({
                   disabled={busy === c.id}
                   onClick={(e) => {
                     e.stopPropagation();
-                    setConfirm({ kind: "absent", candidate: c });
+                     setMarkAbsentCandidate(c); setMarkAbsentNote("");
                   }}
                 >
                   <UserX /> Vắng
@@ -399,7 +465,7 @@ export function CoordinatorBoard({
               const interviewing = t.status === "INTERVIEWING";
               const configIssue = tableConfigurationIssue(t);
               const tableConfigured = !configIssue;
-              const eligible = free && !t.is_paused && !room.is_challenge && !!selectedValid && room.is_configured && tableConfigured && !!t.department && selectedValid.department === t.department &&
+              const eligible = dayReady && free && !t.is_paused && !room.is_challenge && !!selectedValid && !(selectedValid.source_candidate_id && !selectedValid.shift) && room.is_configured && tableConfigured && !!t.department && selectedValid.department === t.department &&
                 (isSpecializedDepartment(selectedValid.department)
                   ? !!selectedValid.specialization && t.specialization === selectedValid.specialization
                   : !selectedValid.specialization);
@@ -408,7 +474,7 @@ export function CoordinatorBoard({
                 <div
                   key={t.id}
                   onDragOver={(e) => {
-                    if (!free || t.is_paused || room.is_challenge || !room.is_configured || !tableConfigured || !t.department || (selectedValid && (selectedValid.department !== t.department || (isSpecializedDepartment(selectedValid.department) ? (!selectedValid.specialization || t.specialization !== selectedValid.specialization) : !!selectedValid.specialization)))) return;
+                    if (!dayReady || !free || t.is_paused || room.is_challenge || !room.is_configured || !tableConfigured || !t.department || (selectedValid && (selectedValid.department !== t.department || (isSpecializedDepartment(selectedValid.department) ? (!selectedValid.specialization || t.specialization !== selectedValid.specialization) : !!selectedValid.specialization)))) return;
                     e.preventDefault();
                     e.dataTransfer.dropEffect = "move";
                     setDragOverTable(t.id);
@@ -422,12 +488,12 @@ export function CoordinatorBoard({
                     if (id) void assign(id, t);
                   }}
                   onClick={() => onTableClick(t)}
-                  role={free && !t.is_paused && !room.is_challenge && room.is_configured && tableConfigured && (!selectedValid || eligible) ? "button" : undefined}
-                  tabIndex={free && !t.is_paused && !room.is_challenge && room.is_configured && tableConfigured && (!selectedValid || eligible) ? 0 : undefined}
-                  aria-disabled={free && (t.is_paused || room.is_challenge || !room.is_configured || !tableConfigured || (!!selectedValid && !eligible))}
+                  role={dayReady && free && !t.is_paused && !room.is_challenge && room.is_configured && tableConfigured && (!selectedValid || eligible) ? "button" : undefined}
+                  tabIndex={dayReady && free && !t.is_paused && !room.is_challenge && room.is_configured && tableConfigured && (!selectedValid || eligible) ? 0 : undefined}
+                  aria-disabled={free && (!dayReady || t.is_paused || room.is_challenge || !room.is_configured || !tableConfigured || (!!selectedValid && !eligible))}
                   onKeyDown={(e) => {
                     if (e.target !== e.currentTarget) return;
-                    if (free && !t.is_paused && !room.is_challenge && room.is_configured && tableConfigured && (!selectedValid || eligible) && (e.key === "Enter" || e.key === " ")) {
+                    if (dayReady && free && !t.is_paused && !room.is_challenge && room.is_configured && tableConfigured && (!selectedValid || eligible) && (e.key === "Enter" || e.key === " ")) {
                       e.preventDefault();
                       onTableClick(t);
                     }
@@ -435,11 +501,11 @@ export function CoordinatorBoard({
                   className={cn(
                     "relative flex min-h-32 flex-col rounded-xl border-2 p-3 transition-all",
                     unreadTables.has(t.id) && "ring-2 ring-red-500/70",
-                    free &&
+                    free && dayReady &&
                       "cursor-pointer border-emerald-300 bg-emerald-50 hover:border-emerald-500 dark:border-emerald-800 dark:bg-emerald-950/50",
                     eligible && "animate-pulse-subtle border-emerald-500 ring-2 ring-emerald-500/30",
                     free && selectedValid && !eligible && "cursor-not-allowed border-muted bg-muted/30 opacity-55",
-                    free && (!room.is_configured || !tableConfigured || room.is_challenge || t.is_paused) && "cursor-not-allowed border-muted bg-muted/30 opacity-55",
+                    free && (!dayReady || !room.is_configured || !tableConfigured || room.is_challenge || t.is_paused) && "cursor-not-allowed border-muted bg-muted/30 opacity-55",
                     isOver && "scale-[1.02] border-emerald-600 ring-4 ring-emerald-500/30",
                     t.status === "ASSIGNED" && "border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/50",
                     interviewing && "border-red-300 bg-red-50 dark:border-red-800 dark:bg-red-950/50"
@@ -539,11 +605,16 @@ export function CoordinatorBoard({
       </AppHeader>
 
       <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-background px-4 py-2 text-sm">
-        <p className="text-sm text-muted-foreground">Màn hình TV hiển thị họ tên thí sinh</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-sm text-muted-foreground">Màn hình TV hiển thị họ tên thí sinh</p>
+          <Button variant="outline" size="sm" onClick={() => setAbsenceOpen(true)}>Quản lý vắng mặt ({cand.rows.filter((item) => item.status === "ABSENT").length})</Button>
+          {selectedValid && <Button variant="outline" size="sm" onClick={() => setRequestCandidate(selectedValid)}><CalendarClock /> Yêu cầu đổi lịch</Button>}
+        </div>
         <a href="/display" target="_blank" rel="noopener noreferrer" className="inline-flex min-h-9 items-center rounded-md border border-primary bg-primary px-4 font-semibold text-primary-foreground hover:bg-primary/90 active:scale-[0.98]">
           Mở màn hình chờ trên tab mới
         </a>
       </div>
+      {!dayReady && <p className="border-b border-amber-300 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-900">Bố trí phòng đang ở ngày {dayLabel(dayState.rows[0].day)}. Admin cần kích hoạt ngày {dayLabel(todayInVietnam())} trước khi điều phối.</p>}
 
       <div className="pointer-events-none fixed inset-x-4 bottom-4 z-50 flex flex-col gap-2 sm:right-4 sm:left-auto sm:w-96" aria-live="polite">
         {alarms.map((alarm) => <div key={alarm.id} role="status" className={cn(
@@ -566,6 +637,31 @@ export function CoordinatorBoard({
         <DialogContent className="sm:max-w-lg">
           <DialogHeader><DialogTitle>Chat · {roomById.get(tbl.rows.find((table) => table.id === chatTableId)?.room_id ?? "")?.name} - {tbl.rows.find((table) => table.id === chatTableId)?.name}</DialogTitle></DialogHeader>
           {chatTableId && <OpsChat key={chatTableId} tableId={chatTableId} selfId={selfId} role={chatIdentity} />}
+        </DialogContent>
+      </Dialog>
+      <AbsenceManagerDialog open={absenceOpen} onClose={() => setAbsenceOpen(false)} candidates={cand.rows} onChanged={() => void cand.refetch()} />
+      <ScheduleRequestDialog candidate={requestCandidate} candidates={cand.rows} onClose={() => setRequestCandidate(null)} />
+      <Dialog open={markAbsentCandidate !== null} onOpenChange={(open) => !open && setMarkAbsentCandidate(null)}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader><DialogTitle>Đánh vắng · {markAbsentCandidate?.full_name}</DialogTitle></DialogHeader>
+          <form onSubmit={saveAbsent} className="grid gap-3">
+            <Textarea value={markAbsentNote} onChange={(event) => setMarkAbsentNote(event.target.value)} maxLength={2000}
+              placeholder="Ghi chú: chuyển ca, không liên lạc được..." />
+            <Button type="submit" variant="destructive" disabled={busy !== null}>{busy && <Loader2 className="animate-spin" />} Xác nhận vắng mặt</Button>
+          </form>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={followupCandidate !== null} onOpenChange={(open) => !open && setFollowupCandidate(null)}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader><DialogTitle>Điều chỉnh lịch Ban thứ hai · {followupCandidate?.full_name}</DialogTitle></DialogHeader>
+          <form onSubmit={saveFollowup} className="grid gap-4">
+            <p className="text-sm text-muted-foreground">Chọn Ca hôm nay để tiếp tục chờ điều phối. Chọn ngày sau để chuyển lượt phỏng vấn sang ngày đó.</p>
+            <ScheduleFields idPrefix="followup" candidates={cand.rows} department={followupCandidate?.department ?? ""}
+              date={followupDate} time={followupTime} onDateChange={setFollowupDate} onTimeChange={setFollowupTime} />
+            <Button type="submit" disabled={busy !== null || !isFutureInterviewSlot(followupDate, followupTime, now)}>
+              {busy && <Loader2 className="animate-spin" />} Lưu lịch phỏng vấn
+            </Button>
+          </form>
         </DialogContent>
       </Dialog>
 
@@ -594,15 +690,9 @@ export function CoordinatorBoard({
       <AlertDialog open={!!confirm} onOpenChange={(o) => !o && setConfirm(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>
-              {confirm?.kind === "absent" ? "Đánh dấu vắng mặt?" : "Trả thí sinh về hàng chờ?"}
-            </AlertDialogTitle>
+            <AlertDialogTitle>Trả thí sinh về hàng chờ?</AlertDialogTitle>
             <AlertDialogDescription>
-              {confirm?.kind === "absent"
-                ? `${confirm.candidate.full_name} sẽ bị bỏ lượt. Bàn tiếp đón có thể check-in lại nếu thí sinh quay lại.`
-                : confirm?.kind === "release"
-                  ? `${confirm.candidate?.full_name ?? "Thí sinh"} sẽ quay lại hàng chờ (giữ nguyên thứ tự) và ${confirm.table.name} được giải phóng. Đồng hồ phỏng vấn (nếu có) sẽ bị huỷ.`
-                  : ""}
+              {confirm?.kind === "release" ? `${confirm.candidate?.full_name ?? "Thí sinh"} sẽ quay lại hàng chờ (giữ nguyên thứ tự) và ${confirm.table.name} được giải phóng. Đồng hồ phỏng vấn (nếu có) sẽ bị huỷ.` : ""}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

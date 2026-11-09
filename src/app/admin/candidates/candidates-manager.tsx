@@ -2,7 +2,7 @@
 
 import { useDeferredValue, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Download, Pencil, Plus, RotateCcw, Search, Trash2, Eye, Loader2, ExternalLink } from "lucide-react";
+import { CalendarDays, Download, Pencil, Plus, RotateCcw, Search, Trash2, Eye, Loader2, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -28,6 +28,7 @@ import { DEPARTMENTS } from "@/lib/departments";
 import { GENDERS } from "@/lib/personal-info";
 import { groupCandidateApplications } from "@/components/candidate-applications";
 import { SPECIALIZATIONS_BY_DEPARTMENT, isSpecializedDepartment, specializationLabel, type SpecializationCode } from "@/lib/specializations";
+import { dayLabel, interviewDate, interviewDays, makeInterviewShift, parseInterviewShift } from "@/lib/interview-days";
 
 const SELECT_CLS = "h-9 rounded-lg border border-input bg-background px-3 text-sm";
 const EMPTY: CandidateInput = { code: "", full_name: "", student_number: "", student_cohort: "", gender: "", facebook_url: "", phone: "", email: "", department: "", specialization: "", shift: "", cv_url: "" };
@@ -51,7 +52,11 @@ export function CandidatesManager({
   const [statusF, setStatusF] = useState<"" | CandidateStatus>("");
   const [deptF, setDeptF] = useState<DepartmentCode | "">("");
   const [exportDept, setExportDept] = useState<DepartmentCode>("CM");
+  const [exportDay, setExportDay] = useState("");
   const [sourceF, setSourceF] = useState<"" | "CHECKIN">("");
+  const [dayF, setDayF] = useState("");
+  const [scheduleIds, setScheduleIds] = useState<string[] | null>(null);
+  const [scheduleDraft, setScheduleDraft] = useState<Record<string, { date: string; time: string }>>({});
   const [editing, setEditing] = useState<{ id: string | null; data: CandidateInput } | null>(null);
   const [viewing, setViewing] = useState<Candidate | null>(null);
   const [criteria, setCriteria] = useState<RubricCriterion[]>([]);
@@ -67,14 +72,45 @@ export function CandidatesManager({
     }
     return map;
   }, [cand.rows]);
+  const days = useMemo(() => interviewDays(cand.rows), [cand.rows]);
+  const scheduleRows = useMemo(() => scheduleIds?.map((id) => cand.rows.find((row) => row.id === id)).filter((row): row is Candidate => !!row) ?? [], [scheduleIds, cand.rows]);
+
+  function openSchedule(candidate: Candidate) {
+    const applications = groupByCandidate.get(candidate.id)?.applications ?? [candidate];
+    setScheduleIds(applications.map((row) => row.id));
+    setScheduleDraft(Object.fromEntries(applications.map((row) => {
+      const parsed = parseInterviewShift(row.shift);
+      return [row.id, { date: parsed?.date ?? "", time: parsed?.time ?? "" }];
+    })));
+  }
+
+  async function saveSchedule() {
+    try {
+      const updates = scheduleRows.map((row) => {
+        const draft = scheduleDraft[row.id];
+        if (Boolean(draft?.date) !== Boolean(draft?.time)) throw new Error(`Nhập đủ ngày và giờ cho Ban ${row.department}`);
+        return { id: row.id, shift: draft?.date && draft.time ? makeInterviewShift(draft.date, draft.time, row.department ?? "") : null };
+      });
+      setBusy(true);
+      const { error } = await createClient().rpc("update_candidate_schedules", { p_updates: updates });
+      if (error) throw error;
+      toast.success("Đã lưu Ca cho từng Ban");
+      setScheduleIds(null);
+      void cand.refetch();
+    } catch (error) {
+      toast.error(errorMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   const filtered = useMemo(() => {
     const nq = normalizeText(q);
     return cand.rows
-      .filter((c) => (!statusF || c.status === statusF) && (!deptF || c.department === deptF) && (!sourceF || c.added_by_role === sourceF))
+      .filter((c) => (!statusF || c.status === statusF) && (!deptF || c.department === deptF) && (!sourceF || c.added_by_role === sourceF) && (!dayF || interviewDate(c) === dayF))
       .filter((c) => !nq || normalizeText(`${c.code} ${c.student_number ?? ""} ${c.student_number_raw ?? ""} ${c.full_name} ${c.phone ?? ""} ${c.email ?? ""}`).includes(nq))
       .sort((a, b) => a.code.localeCompare(b.code, "vi", { numeric: true }));
-  }, [cand.rows, q, statusF, deptF, sourceF]);
+  }, [cand.rows, q, statusF, deptF, sourceF, dayF]);
 
   async function loadCriteria() {
     const { data } = await createClient().from("rubric_criteria").select("*").order("sort_order");
@@ -83,7 +119,7 @@ export function CandidatesManager({
     return list;
   }
 
-  async function onExport(department?: DepartmentCode) {
+  async function onExport(filter?: { department?: DepartmentCode; day?: string }) {
     setBusy(true);
     try {
       const supabase = createClient();
@@ -92,8 +128,8 @@ export function CandidatesManager({
         fetchAll<Evaluation>(supabase, "evaluations"),
         loadCriteria(),
       ]);
-      exportResults(c, e, r, department);
-      toast.success(`Đã xuất ${department ? `${department}: ` : ""}${department ? c.filter((candidate) => candidate.department === department).length : c.length} thí sinh`);
+      exportResults(c, e, r, filter);
+      toast.success(`Đã xuất ${c.filter((candidate) => (!filter?.department || candidate.department === filter.department) && (!filter?.day || interviewDate(candidate) === filter.day)).length} lượt phỏng vấn`);
     } catch (err) {
       toast.error(errorMessage(err));
     } finally {
@@ -141,6 +177,8 @@ export function CandidatesManager({
     <div className="flex shrink-0 items-center justify-end gap-0.5">
       <Button size="icon-sm" variant="ghost" title="Xem chi tiết" aria-label={`Xem ${c.full_name}`}
         onClick={() => { setViewing(c); if (!criteria.length) void loadCriteria(); }}><Eye /></Button>
+      <Button size="icon-sm" variant="ghost" title="Sửa Ca phỏng vấn" aria-label={`Sửa Ca ${c.full_name}`}
+        onClick={() => openSchedule(c)}><CalendarDays /></Button>
       <Button size="icon-sm" variant="ghost" title="Sửa" aria-label={`Sửa ${c.full_name}`}
         onClick={() => setEditing({
           id: c.id,
@@ -179,14 +217,23 @@ export function CandidatesManager({
           <Plus /> Thêm
         </Button>
         <Button variant="outline" onClick={() => void onExport()} disabled={busy}>
-          {busy ? <Loader2 className="animate-spin" /> : <Download />} Xuất kết quả Excel
+          {busy ? <Loader2 className="animate-spin" /> : <Download />} Xuất toàn bộ
         </Button>
         <div className="flex items-center gap-1.5">
           <select className={SELECT_CLS} value={exportDept} onChange={(event) => setExportDept(event.target.value as DepartmentCode)} aria-label="Chọn ban để xuất Excel">
             {DEPARTMENTS.map((department) => <option key={department.code} value={department.code}>{department.code} · {department.name}</option>)}
           </select>
-          <Button variant="outline" onClick={() => void onExport(exportDept)} disabled={busy}>
+          <Button variant="outline" onClick={() => void onExport({ department: exportDept })} disabled={busy}>
             {busy ? <Loader2 className="animate-spin" /> : <Download />} Xuất theo ban
+          </Button>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <select className={SELECT_CLS} value={exportDay} onChange={(event) => setExportDay(event.target.value)} aria-label="Chọn ngày để xuất Excel">
+            <option value="">Chọn ngày</option>
+            {days.map((day) => <option key={day} value={day}>{dayLabel(day)}</option>)}
+          </select>
+          <Button variant="outline" onClick={() => void onExport({ day: exportDay })} disabled={busy || !exportDay}>
+            <Download /> Xuất theo ngày
           </Button>
         </div>
       </div>
@@ -204,6 +251,10 @@ export function CandidatesManager({
           <option value="">Mọi nguồn</option>
           <option value="CHECKIN">Check-in bổ sung</option>
         </select>
+        <select className={SELECT_CLS} value={dayF} onChange={(event) => setDayF(event.target.value)} aria-label="Lọc ngày phỏng vấn">
+          <option value="">Mọi ngày phỏng vấn</option>
+          {days.map((day) => <option key={day} value={day}>{dayLabel(day)}</option>)}
+        </select>
         <DepartmentRadio name="candidate-filter-department" value={deptF} onChange={setDeptF} allowAll />
       </div>
 
@@ -211,10 +262,11 @@ export function CandidatesManager({
         <Table className="table-fixed">
           <TableHeader>
             <TableRow>
-              <TableHead className="w-[36%]">Thí sinh</TableHead>
-              <TableHead className="w-[12%]">Ban</TableHead>
-              <TableHead className="w-[24%]">Trạng thái</TableHead>
-              <TableHead className="w-[10%] text-right">Kết quả</TableHead>
+              <TableHead className="w-[25%]">Thí sinh</TableHead>
+              <TableHead className="w-[11%]">Ban</TableHead>
+              <TableHead className="w-[18%]">Ca</TableHead>
+              <TableHead className="w-[20%]">Trạng thái</TableHead>
+              <TableHead className="w-[8%] text-right">Kết quả</TableHead>
               <TableHead className="w-[18%] text-right">Thao tác</TableHead>
             </TableRow>
           </TableHeader>
@@ -225,10 +277,11 @@ export function CandidatesManager({
               return (
                 <TableRow key={c.id}>
                   <TableCell className="whitespace-normal">
-                    <p className="break-words font-semibold">{c.full_name}{c.source_candidate_id && <span className="ml-1.5 inline-block rounded bg-violet-100 px-1.5 py-0.5 align-middle text-[10px] font-semibold text-violet-800">Lượt 2</span>}</p>
-                    <p className="mt-1 truncate font-mono text-xs text-muted-foreground">{c.code} · MSSV {c.student_number || c.student_number_raw || "—"}</p>
+                    <p className="break-words font-semibold">{c.full_name}{c.source_candidate_id && <span className="ml-1.5 inline-block rounded bg-violet-100 px-1.5 py-0.5 align-middle text-[10px] font-semibold text-violet-800">Ban khác</span>}</p>
+                    <p className="mt-1 truncate font-mono text-xs text-muted-foreground">{c.code} · MSSV {c.student_number || group?.primary.student_number || c.student_number_raw || "—"}</p>
                   </TableCell>
-                  <TableCell className="whitespace-normal text-sm">{group?.departments.join(" · ") || c.department || "—"}{c.specialization ? <span className="mt-0.5 block text-xs text-muted-foreground">{specializationLabel(c.specialization)}</span> : isSpecializedDepartment(c.department) && <span className="mt-0.5 block text-xs font-medium text-amber-700">Chưa chọn ngạch</span>}</TableCell>
+                  <TableCell className="whitespace-normal text-sm">{c.department || "—"}{c.specialization ? <span className="mt-0.5 block text-xs text-muted-foreground">{specializationLabel(c.specialization)}</span> : isSpecializedDepartment(c.department) && <span className="mt-0.5 block text-xs font-medium text-amber-700">Chưa chọn ngạch</span>}</TableCell>
+                  <TableCell className="whitespace-normal text-xs"><span className="block">{c.shift || "Chưa có Ca"}</span>{group && interviewDays(group.applications).length > 1 && <Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={() => openSchedule(c)}>2 ngày · sửa lịch</Button>}</TableCell>
                   <TableCell className="whitespace-normal">{renderStatus(c)}</TableCell>
                   <TableCell className="text-right tabular-nums">
                     <span className="font-semibold">{e?.average_score != null ? Number(e.average_score).toFixed(2) : "—"}</span>
@@ -240,7 +293,7 @@ export function CandidatesManager({
             })}
             {filtered.length === 0 && (
               <TableRow>
-                <TableCell colSpan={5} className="py-10 text-center text-muted-foreground">
+                <TableCell colSpan={6} className="py-10 text-center text-muted-foreground">
                   {cand.rows.length ? "Không có thí sinh phù hợp bộ lọc." : "Chưa có thí sinh. Bấm ‘Import Excel’ để nhập danh sách."}
                 </TableCell>
               </TableRow>
@@ -257,16 +310,17 @@ export function CandidatesManager({
             <article key={c.id} className="rounded-xl border bg-card p-3 shadow-sm shadow-black/[0.03]">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <p className="break-words font-semibold leading-snug">{c.full_name}{c.source_candidate_id && <span className="ml-1.5 inline-block rounded bg-violet-100 px-1.5 py-0.5 align-middle text-[10px] font-semibold text-violet-800">Lượt 2</span>}</p>
-                  <p className="mt-1 truncate font-mono text-xs text-muted-foreground">{c.code} · MSSV {c.student_number || c.student_number_raw || "—"}</p>
+                  <p className="break-words font-semibold leading-snug">{c.full_name}{c.source_candidate_id && <span className="ml-1.5 inline-block rounded bg-violet-100 px-1.5 py-0.5 align-middle text-[10px] font-semibold text-violet-800">Ban khác</span>}</p>
+                  <p className="mt-1 truncate font-mono text-xs text-muted-foreground">{c.code} · MSSV {c.student_number || group?.primary.student_number || c.student_number_raw || "—"}</p>
                 </div>
                 {renderActions(c)}
               </div>
               <div className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-t pt-3 text-sm">
-                <p><span className="text-xs text-muted-foreground">Ban </span><span className="font-medium">{group?.departments.join(" · ") || c.department || "—"}{c.specialization ? ` · ${specializationLabel(c.specialization)}` : isSpecializedDepartment(c.department) ? " · Chưa chọn ngạch" : ""}</span></p>
+                <p><span className="text-xs text-muted-foreground">Ban </span><span className="font-medium">{c.department || "—"}{c.specialization ? ` · ${specializationLabel(c.specialization)}` : isSpecializedDepartment(c.department) ? " · Chưa chọn ngạch" : ""}</span></p>
                 <p className="text-right"><span className="font-semibold tabular-nums">{e?.average_score != null ? Number(e.average_score).toFixed(2) : "—"}</span>{c.duration_seconds != null && <span className="ml-2 text-xs text-muted-foreground">{formatDuration(c.duration_seconds)}</span>}</p>
               </div>
               <div className="mt-2">{renderStatus(c)}</div>
+              <p className="mt-2 text-xs text-muted-foreground">Ca: {c.shift || "Chưa có Ca"} {group && interviewDays(group.applications).length > 1 && <Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={() => openSchedule(c)}>· 2 ngày · sửa lịch</Button>}</p>
               {c.added_by_name && <p className="mt-2 truncate text-xs text-muted-foreground">Bổ sung bởi {c.added_by_name}{c.added_by_email && <> · {c.added_by_email}</>}</p>}
             </article>
           );
@@ -280,6 +334,26 @@ export function CandidatesManager({
           <Trash2 /> Xoá toàn bộ thí sinh & kết quả
         </Button>
       </div>
+
+      {/* Thêm / sửa */}
+      <Dialog open={!!scheduleIds} onOpenChange={(open) => { if (!open && !busy) setScheduleIds(null); }}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Ca phỏng vấn · {scheduleRows[0]?.full_name}</DialogTitle>
+            <DialogDescription>Mỗi Ban có một Ca và một phiếu kết quả riêng. Sửa lịch không thay đổi kết quả đã chấm.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            {scheduleRows.map((row) => <div key={row.id} className="grid gap-2 rounded-lg border p-3 sm:grid-cols-[5rem_1fr_8rem] sm:items-end">
+              <span className="font-semibold">{row.department}</span>
+              <div className="grid gap-1"><Label htmlFor={`day-${row.id}`}>Ngày</Label><Input id={`day-${row.id}`} type="date" value={scheduleDraft[row.id]?.date ?? ""}
+                onChange={(event) => setScheduleDraft((current) => ({ ...current, [row.id]: { ...current[row.id], date: event.target.value } }))} /></div>
+              <div className="grid gap-1"><Label htmlFor={`time-${row.id}`}>Giờ</Label><Input id={`time-${row.id}`} type="time" value={scheduleDraft[row.id]?.time ?? ""}
+                onChange={(event) => setScheduleDraft((current) => ({ ...current, [row.id]: { ...current[row.id], time: event.target.value } }))} /></div>
+            </div>)}
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setScheduleIds(null)} disabled={busy}>Huỷ</Button><Button onClick={() => void saveSchedule()} disabled={busy}>{busy && <Loader2 className="animate-spin" />}Lưu Ca</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Thêm / sửa */}
       <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>
@@ -338,7 +412,7 @@ export function CandidatesManager({
               <DialogHeader>
                 <DialogTitle>{viewing.full_name}</DialogTitle>
                 <DialogDescription>
-                  {viewing.code} · {groupByCandidate.get(viewing.id)?.departments.join(" · ") || viewing.department} · {groupByCandidate.get(viewing.id)?.shifts.join(" ; ") || viewing.shift}
+                  {viewing.code} · {viewing.department} · {viewing.shift || "Chưa có Ca"}
                 </DialogDescription>
               </DialogHeader>
               <div className="grid gap-3 text-sm">
@@ -353,7 +427,8 @@ export function CandidatesManager({
                 <dl className="grid grid-cols-2 gap-2 text-xs">
                   <dt className="text-muted-foreground">Check-in</dt><dd>{formatDateTime(viewing.checked_in_at) || "—"}</dd>
                   <dt className="text-muted-foreground">MSSV</dt><dd className="font-mono">{viewing.student_number || viewing.student_number_raw || "—"}{viewing.student_number_raw && " (cần xác minh)"}</dd>
-                  <dt className="text-muted-foreground">Ban · Ngạch · Ca</dt><dd>{groupByCandidate.get(viewing.id)?.departments.join(" · ") || viewing.department || "—"} · {specializationLabel(viewing.specialization) || (isSpecializedDepartment(viewing.department) ? "Chưa chọn ngạch" : "—")}<br />{groupByCandidate.get(viewing.id)?.shifts.join(" ; ") || viewing.shift || "—"}</dd>
+                  <dt className="text-muted-foreground">Ban · Ngạch · Ca</dt><dd>{viewing.department || "—"} · {specializationLabel(viewing.specialization) || (isSpecializedDepartment(viewing.department) ? "Chưa chọn ngạch" : "—")}<br />{viewing.shift || "—"}</dd>
+                  {(groupByCandidate.get(viewing.id)?.applications.length ?? 0) > 1 && <><dt className="text-muted-foreground">Các lịch phỏng vấn</dt><dd className="space-y-1">{groupByCandidate.get(viewing.id)?.applications.map((row) => <p key={row.id}>{row.department}: {row.shift || "Chưa có Ca"}</p>)}<Button variant="link" size="sm" className="h-auto p-0" onClick={() => { setViewing(null); openSchedule(viewing); }}>Sửa các Ca</Button></dd></>}
                   <dt className="text-muted-foreground">Khóa · Giới tính</dt><dd>{[viewing.student_cohort, GENDERS.find((gender) => gender.code === viewing.gender)?.name].filter(Boolean).join(" · ") || "—"}</dd>
                   <dt className="text-muted-foreground">Email</dt><dd className="break-all">{viewing.email || "—"}</dd>
                   <dt className="text-muted-foreground">SĐT</dt><dd>{viewing.phone || "—"}</dd>

@@ -101,7 +101,7 @@ export function ImportDialog({ onDone }: { onDone: () => void }) {
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Import lịch phỏng vấn vào Ca</DialogTitle>
-            <DialogDescription>Nhập danh sách thí sinh trước. Lịch 09–11/11 được đối chiếu bằng MSSV hoặc Email; mọi dòng phải khớp thì mới cập nhật. Nhiều lịch của cùng một thí sinh sẽ được giữ chung trong Ca.</DialogDescription>
+            <DialogDescription>Nhập danh sách thí sinh trước. Lịch 09–11/11 được đối chiếu bằng MSSV hoặc Email; mọi dòng phải khớp thì mới cập nhật. Mỗi Ban có một lượt phỏng vấn và Ca riêng. Lịch của Ban đã chấm chỉ đổi Ca, giữ nguyên kết quả.</DialogDescription>
           </DialogHeader>
           <label className="grid gap-1 text-sm">Năm phỏng vấn
             <input type="number" min="2020" max="2100" value={scheduleYear} onChange={(event) => { setScheduleYear(Number(event.target.value)); setSchedule(null); }} className="h-10 rounded-md border border-input bg-background px-3" />

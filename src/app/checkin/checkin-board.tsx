@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState, useTransition, useDeferredValue } from "react";
+import { useEffect, useMemo, useState, useTransition, useDeferredValue } from "react";
 import { toast } from "sonner";
-import { Check, Search, Undo2, UserX, Loader2, Phone, Hash, Plus, Pencil } from "lucide-react";
+import { Check, Search, Undo2, UserX, Loader2, Phone, Hash, Plus, Pencil, CalendarClock } from "lucide-react";
 import { AppHeader } from "@/components/app-header";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
@@ -21,6 +21,9 @@ import { type DepartmentCode } from "@/lib/departments";
 import { GENDERS, type GenderCode, normalizeStudentNumber } from "@/lib/personal-info";
 import { groupCandidateApplications } from "@/components/candidate-applications";
 import { SPECIALIZATIONS_BY_DEPARTMENT, isSpecializedDepartment, specializationLabel, type SpecializationCode } from "@/lib/specializations";
+import { dayLabel, interviewDate, interviewDays, todayInVietnam } from "@/lib/interview-days";
+import { ScheduleRequestDialog } from "@/components/schedule-request-dialog";
+import { useServerNow } from "@/components/clock";
 
 const NATIVE_SELECT =
   "h-10 rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50";
@@ -47,9 +50,12 @@ export function CheckinBoard({
   const [query, setQuery] = useState("");
   const deferredQuery = useDeferredValue(query);
   const [shift, setShift] = useState("");
+  const [day, setDay] = useState(() => interviewDays(initialCandidates).includes(todayInVietnam()) ? todayInVietnam() : "");
   const [dept, setDept] = useState<DepartmentCode | "">("");
   const [statusFilter, setStatusFilter] = useState<"" | CandidateStatus>("");
   const [absenceManager, setAbsenceManager] = useState(false);
+  const serverNow = useServerNow(30_000);
+  const [scheduleCandidate, setScheduleCandidate] = useState<Candidate | null>(null);
   const [absenceCandidate, setAbsenceCandidate] = useState<Candidate | null>(null);
   const [absenceNote, setAbsenceNote] = useState("");
   const [absenceDialogMode, setAbsenceDialogMode] = useState<"MARK" | "EDIT">("MARK");
@@ -61,9 +67,23 @@ export function CheckinBoard({
   const [addingWalkIn, setAddingWalkIn] = useState(false);
   const [, startTransition] = useTransition();
 
+  useEffect(() => {
+    let previous = todayInVietnam();
+    const timer = window.setInterval(() => {
+      const current = todayInVietnam();
+      if (current !== previous) {
+        setDay((selected) => selected === previous ? current : selected);
+        setShift("");
+        previous = current;
+      }
+    }, 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const days = useMemo(() => interviewDays(rows), [rows]);
   const shifts = useMemo(
-    () => [...new Set(rows.map((r) => r.shift).filter(Boolean) as string[])].sort(),
-    [rows]
+    () => [...new Set(rows.filter((row) => !day || interviewDate(row) === day).map((r) => r.shift).filter(Boolean) as string[])].sort(),
+    [rows, day]
   );
 
   const groupByCandidate = useMemo(() => {
@@ -80,6 +100,7 @@ export function CheckinBoard({
     return rows
       .filter((c) => {
         if (absenceManager && c.status !== "ABSENT") return false;
+        if (day && interviewDate(c) !== day && (interviewDate(c) || c.status === "COMPLETED")) return false;
         if (shift && c.shift !== shift) return false;
         if (dept && c.department !== dept) return false;
         if (statusFilter && c.status !== statusFilter) return false;
@@ -87,7 +108,7 @@ export function CheckinBoard({
         return (
           normalizeText(c.full_name).includes(q) ||
           normalizeText(c.code).includes(q) ||
-          normalizeText(c.student_number ?? "").includes(q) ||
+          normalizeText(c.student_number ?? groupByCandidate.get(c.id)?.primary.student_number ?? "").includes(q) ||
           (qDigits.length >= 3 && (c.phone ?? "").replace(/\D/g, "").includes(qDigits))
         );
       })
@@ -98,14 +119,15 @@ export function CheckinBoard({
         const pb = b.status === "NOT_ARRIVED" ? 0 : 1;
         return pa - pb || a.code.localeCompare(b.code, "vi", { numeric: true });
       });
-  }, [rows, deferredQuery, shift, dept, statusFilter, absenceManager]);
+  }, [rows, deferredQuery, shift, dept, statusFilter, absenceManager, day, groupByCandidate]);
 
   const counts = useMemo(() => {
-    const total = rows.length;
-    const arrived = rows.filter((r) => r.status !== "NOT_ARRIVED" && r.status !== "ABSENT").length;
-    const absent = rows.filter((r) => r.status === "ABSENT").length;
+    const scoped = rows.filter((row) => !day || interviewDate(row) === day || (!interviewDate(row) && row.status !== "COMPLETED"));
+    const total = scoped.length;
+    const arrived = scoped.filter((r) => r.status !== "NOT_ARRIVED" && r.status !== "ABSENT").length;
+    const absent = scoped.filter((r) => r.status === "ABSENT").length;
     return { total, arrived, absent };
-  }, [rows]);
+  }, [rows, day]);
 
   async function run(c: Candidate, fn: string, optimistic: Partial<Candidate>, okMsg: string) {
     setBusyId(c.id);
@@ -128,13 +150,18 @@ export function CheckinBoard({
     toast.success(okMsg);
   }
 
-  const checkIn = (c: Candidate) =>
-    run(
+  const checkIn = (c: Candidate) => {
+    if (interviewDate(c) && interviewDate(c) !== todayInVietnam(serverNow)) {
+      toast.error("Ca không thuộc ngày hôm nay. Gửi yêu cầu đổi lịch trước khi check-in.");
+      return;
+    }
+    return run(
       c,
       "check_in_candidate",
       { status: "CHECKED_IN", checked_in_at: new Date().toISOString(), absent_at: null, absent_note: null },
       `Đã check-in: ${c.full_name}`
     );
+  };
   const undo = (c: Candidate) =>
     run(c, "undo_check_in", { status: "NOT_ARRIVED", checked_in_at: null }, `Đã hoàn tác: ${c.full_name}`);
   function openAbsenceNote(c: Candidate) {
@@ -289,6 +316,10 @@ export function CheckinBoard({
             />
           </div>
           <div className="grid min-w-0 grid-cols-2 gap-2 md:grid-cols-3 2xl:flex">
+            <select className={cn(NATIVE_SELECT, "w-full min-w-0")} value={day} onChange={(event) => { setDay(event.target.value); setShift(""); }} aria-label="Lọc ngày phỏng vấn">
+              <option value="">Mọi ngày</option>
+              {days.map((value) => <option key={value} value={value}>{dayLabel(value)}</option>)}
+            </select>
             <select className={cn(NATIVE_SELECT, "w-full min-w-0")} value={shift} onChange={(e) => setShift(e.target.value)} aria-label="Lọc theo ca">
               <option value="">Tất cả ca</option>
               {shifts.map((s) => (
@@ -316,7 +347,7 @@ export function CheckinBoard({
           <Button variant={absenceManager ? "outline" : "default"} className="w-full sm:w-auto" onClick={() => { setAbsenceManager(false); setStatusFilter(""); }}>
             Danh sách check-in
           </Button>
-          <Button variant={absenceManager ? "default" : "outline"} className="w-full sm:w-auto" onClick={() => { setAbsenceManager(true); setStatusFilter(""); }}>
+          <Button variant={absenceManager ? "default" : "outline"} className="w-full sm:w-auto" onClick={() => { setAbsenceManager(true); setStatusFilter(""); setDay(""); setShift(""); }}>
             Quản lý vắng mặt ({counts.absent})
           </Button>
         </div>
@@ -348,11 +379,11 @@ export function CheckinBoard({
                   className={cn("transition-colors", flashId === c.id && "bg-emerald-50 dark:bg-emerald-950")}
                 >
                   <TableCell className="font-mono text-xs">{c.code}</TableCell>
-                  <TableCell className="font-mono text-xs">{c.student_number || "—"}</TableCell>
+                  <TableCell className="font-mono text-xs">{c.student_number || groupByCandidate.get(c.id)?.primary.student_number || "—"}</TableCell>
                   <TableCell className="font-medium">{c.full_name}</TableCell>
                   <TableCell className="tabular-nums">{c.phone}</TableCell>
-                  <TableCell>{groupByCandidate.get(c.id)?.departments.join(" · ") || c.department}{c.specialization && <span className="block text-xs text-muted-foreground">{specializationLabel(c.specialization)}</span>}</TableCell>
-                  <TableCell>{groupByCandidate.get(c.id)?.shifts.join(" ; ") || c.shift}</TableCell>
+                  <TableCell>{c.department}{c.specialization && <span className="block text-xs text-muted-foreground">{specializationLabel(c.specialization)}</span>}</TableCell>
+                  <TableCell>{c.shift || "—"}</TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
                       <StatusBadge status={c.status} />
@@ -378,6 +409,9 @@ export function CheckinBoard({
                   <TableCell>
                     <div className="flex justify-end gap-2">
                       <Actions c={c} />
+                      {absenceManager && c.status === "ABSENT" && <Button variant="outline" size="sm" onClick={() => setScheduleCandidate(c)}>
+                        <CalendarClock /> Đổi lịch
+                      </Button>}
                       {c.status === "NOT_ARRIVED" && (
                         <Button
                           variant="ghost"
@@ -420,22 +454,26 @@ export function CheckinBoard({
                   <p className="break-words text-base font-semibold">{c.full_name}</p>
                   <p className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                     <span className="inline-flex items-center gap-1 font-mono"><Hash className="size-3" />{c.code}</span>
-                    {c.student_number && <span className="font-mono">MSSV {c.student_number}</span>}
+                    {(c.student_number || groupByCandidate.get(c.id)?.primary.student_number) && <span className="font-mono">MSSV {c.student_number || groupByCandidate.get(c.id)?.primary.student_number}</span>}
                     {c.phone && (
                       <span className="inline-flex items-center gap-1 tabular-nums"><Phone className="size-3" />{c.phone}</span>
                     )}
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    {[groupByCandidate.get(c.id)?.departments.join(" · ") || c.department, specializationLabel(c.specialization), groupByCandidate.get(c.id)?.shifts.join(" ; ") || c.shift].filter(Boolean).join(" · ")}
+                    {[c.department, specializationLabel(c.specialization), c.shift].filter(Boolean).join(" · ")}
                   </p>
                   {c.status === "ABSENT" && <div className="mt-3 rounded-lg bg-amber-50 p-3 text-sm dark:bg-amber-950/30">
                     <p className="text-xs font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-200">Ghi chú vắng mặt</p>
                     <p className="mt-1 whitespace-pre-wrap break-words">{c.absent_note || "Chưa có ghi chú"}</p>
                     {c.absent_at && <time className="mt-2 block text-xs text-muted-foreground">Ghi nhận lúc {formatTime(c.absent_at)}</time>}
-                    {absenceManager && <Button variant="outline" size="sm" className="mt-3"
-                      onClick={() => openEditAbsenceNote(c)} disabled={busyId === c.id}>
-                      <Pencil /> Sửa ghi chú
-                    </Button>}
+                    {absenceManager && <div className="mt-3 flex flex-wrap gap-2">
+                      <Button variant="outline" size="sm" onClick={() => openEditAbsenceNote(c)} disabled={busyId === c.id}>
+                        <Pencil /> Sửa ghi chú
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={() => setScheduleCandidate(c)}>
+                        <CalendarClock /> Yêu cầu đổi lịch
+                      </Button>
+                    </div>}
                   </div>}
                 </div>
                 <StatusBadge status={c.status} />
@@ -455,6 +493,7 @@ export function CheckinBoard({
           )}
         </ul>
       </main>
+      <ScheduleRequestDialog candidate={scheduleCandidate} candidates={rows} onClose={() => setScheduleCandidate(null)} />
 
       <Dialog open={walkInOpen} onOpenChange={(open) => { if (!addingWalkIn) setWalkInOpen(open); }}>
         <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-xl md:max-w-2xl">
