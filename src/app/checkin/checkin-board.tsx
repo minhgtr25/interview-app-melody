@@ -8,6 +8,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useRealtimeRows } from "@/hooks/use-realtime-rows";
@@ -47,6 +48,10 @@ export function CheckinBoard({
   const [shift, setShift] = useState("");
   const [dept, setDept] = useState<DepartmentCode | "">("");
   const [statusFilter, setStatusFilter] = useState<"" | CandidateStatus>("");
+  const [absenceManager, setAbsenceManager] = useState(false);
+  const [absenceCandidate, setAbsenceCandidate] = useState<Candidate | null>(null);
+  const [absenceNote, setAbsenceNote] = useState("");
+  const [savingAbsence, setSavingAbsence] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [flashId, setFlashId] = useState<string | null>(null);
   const [walkInOpen, setWalkInOpen] = useState(false);
@@ -72,6 +77,7 @@ export function CheckinBoard({
     const qDigits = deferredQuery.replace(/\D/g, "");
     return rows
       .filter((c) => {
+        if (absenceManager && c.status !== "ABSENT") return false;
         if (shift && c.shift !== shift) return false;
         if (dept && c.department !== dept) return false;
         if (statusFilter && c.status !== statusFilter) return false;
@@ -84,22 +90,24 @@ export function CheckinBoard({
         );
       })
       .sort((a, b) => {
+        if (absenceManager) return (b.absent_at ?? "").localeCompare(a.absent_at ?? "");
         // Chưa đến lên đầu để tiếp đón nhanh, sau đó theo mã
         const pa = a.status === "NOT_ARRIVED" ? 0 : 1;
         const pb = b.status === "NOT_ARRIVED" ? 0 : 1;
         return pa - pb || a.code.localeCompare(b.code, "vi", { numeric: true });
       });
-  }, [rows, deferredQuery, shift, dept, statusFilter]);
+  }, [rows, deferredQuery, shift, dept, statusFilter, absenceManager]);
 
   const counts = useMemo(() => {
     const total = rows.length;
     const arrived = rows.filter((r) => r.status !== "NOT_ARRIVED" && r.status !== "ABSENT").length;
-    return { total, arrived };
+    const absent = rows.filter((r) => r.status === "ABSENT").length;
+    return { total, arrived, absent };
   }, [rows]);
 
   async function run(c: Candidate, fn: string, optimistic: Partial<Candidate>, okMsg: string) {
     setBusyId(c.id);
-    const before = { status: c.status, checked_in_at: c.checked_in_at, absent_at: c.absent_at };
+    const before = { status: c.status, checked_in_at: c.checked_in_at, absent_at: c.absent_at, absent_note: c.absent_note };
     patchRow(c.id, optimistic);
     const { error } = await createClient().rpc(fn, { p_candidate_id: c.id });
     setBusyId(null);
@@ -122,13 +130,41 @@ export function CheckinBoard({
     run(
       c,
       "check_in_candidate",
-      { status: "CHECKED_IN", checked_in_at: new Date().toISOString(), absent_at: null },
+      { status: "CHECKED_IN", checked_in_at: new Date().toISOString(), absent_at: null, absent_note: null },
       `Đã check-in: ${c.full_name}`
     );
   const undo = (c: Candidate) =>
     run(c, "undo_check_in", { status: "NOT_ARRIVED", checked_in_at: null }, `Đã hoàn tác: ${c.full_name}`);
-  const absent = (c: Candidate) =>
-    run(c, "mark_absent", { status: "ABSENT", absent_at: new Date().toISOString() }, `Đã đánh vắng: ${c.full_name}`);
+  function openAbsenceNote(c: Candidate) {
+    setAbsenceCandidate(c);
+    setAbsenceNote(c.absent_note ?? "");
+  }
+
+  async function saveAbsence(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!absenceCandidate || savingAbsence) return;
+    const candidate = absenceCandidate;
+    setSavingAbsence(true);
+    setBusyId(candidate.id);
+    const markedAt = new Date().toISOString();
+    const note = absenceNote.trim().slice(0, 2000);
+    const { error } = await createClient().rpc("mark_absent_with_note", {
+      p_candidate_id: candidate.id,
+      p_note: note || null,
+    });
+    setSavingAbsence(false);
+    setBusyId(null);
+    if (error) {
+      toast.error(error.code === "PGRST202" || error.code === "42703"
+        ? "Database chưa có chức năng ghi chú vắng mặt. Admin cần chạy migration 20261112_absence_notes.sql."
+        : errorMessage(error));
+      return;
+    }
+    patchRow(candidate.id, { status: "ABSENT", absent_at: markedAt, absent_note: note || null });
+    toast.success(`Đã đánh vắng: ${candidate.full_name}`);
+    setAbsenceCandidate(null);
+    setAbsenceNote("");
+  }
 
   async function addWalkIn(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -239,7 +275,7 @@ export function CheckinBoard({
                 <option key={s} value={s}>{s}</option>
               ))}
             </select>
-            <select
+            {!absenceManager && <select
               className={cn(NATIVE_SELECT, "w-full min-w-0")}
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value as CandidateStatus | "")}
@@ -249,15 +285,23 @@ export function CheckinBoard({
               {(Object.keys(STATUS_LABEL) as CandidateStatus[]).map((s) => (
                 <option key={s} value={s}>{STATUS_LABEL[s]}</option>
               ))}
-            </select>
+            </select>}
             <div className="col-span-2 min-w-0 md:col-span-3"><DepartmentRadio name="checkin-department" value={dept} onChange={setDept} allowAll /></div>
           </div>
         </div>
       </div>
 
       <main className="mx-auto max-w-screen-2xl px-3 py-4 sm:px-4">
+        <div className="mb-3 grid grid-cols-2 gap-2 sm:flex">
+          <Button variant={absenceManager ? "outline" : "default"} className="w-full sm:w-auto" onClick={() => { setAbsenceManager(false); setStatusFilter(""); }}>
+            Danh sách check-in
+          </Button>
+          <Button variant={absenceManager ? "default" : "outline"} className="w-full sm:w-auto" onClick={() => { setAbsenceManager(true); setStatusFilter(""); }}>
+            Quản lý vắng mặt ({counts.absent})
+          </Button>
+        </div>
         <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-muted-foreground">{filtered.length} thí sinh · Đã đến {counts.arrived}/{counts.total}</p>
+          <p className="text-sm text-muted-foreground">{filtered.length} {absenceManager ? "trường hợp vắng mặt" : `thí sinh · Đã đến ${counts.arrived}/${counts.total}`}</p>
           <Button className="w-full sm:w-auto" onClick={() => setWalkInOpen(true)}><Plus /> Thêm thí sinh bổ sung</Button>
         </div>
 
@@ -273,6 +317,7 @@ export function CheckinBoard({
                 <TableHead>Ban</TableHead>
                 <TableHead>Ca</TableHead>
                 <TableHead>Trạng thái</TableHead>
+                <TableHead>Ghi chú vắng</TableHead>
                 <TableHead className="w-56 text-right">Thao tác</TableHead>
               </TableRow>
             </TableHeader>
@@ -296,6 +341,9 @@ export function CheckinBoard({
                       )}
                     </div>
                   </TableCell>
+                  <TableCell className="max-w-64 whitespace-normal text-sm">
+                    {c.status === "ABSENT" ? c.absent_note || "Chưa có ghi chú" : "—"}
+                  </TableCell>
                   <TableCell>
                     <div className="flex justify-end gap-2">
                       <Actions c={c} />
@@ -303,7 +351,7 @@ export function CheckinBoard({
                         <Button
                           variant="ghost"
                           size="icon"
-                          onClick={() => absent(c)}
+                          onClick={() => openAbsenceNote(c)}
                           disabled={busyId === c.id}
                           aria-label="Đánh vắng"
                           title="Đánh vắng"
@@ -317,7 +365,7 @@ export function CheckinBoard({
               ))}
               {filtered.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={8} className="py-10 text-center text-muted-foreground">
+                  <TableCell colSpan={9} className="py-10 text-center text-muted-foreground">
                     Không tìm thấy thí sinh phù hợp.
                   </TableCell>
                 </TableRow>
@@ -349,13 +397,18 @@ export function CheckinBoard({
                   <p className="mt-1 text-xs text-muted-foreground">
                     {[groupByCandidate.get(c.id)?.departments.join(" · ") || c.department, groupByCandidate.get(c.id)?.shifts.join(" ; ") || c.shift].filter(Boolean).join(" · ")}
                   </p>
+                  {c.status === "ABSENT" && <div className="mt-3 rounded-lg bg-amber-50 p-3 text-sm dark:bg-amber-950/30">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-200">Ghi chú vắng mặt</p>
+                    <p className="mt-1 whitespace-pre-wrap break-words">{c.absent_note || "Chưa có ghi chú"}</p>
+                    {c.absent_at && <time className="mt-2 block text-xs text-muted-foreground">Ghi nhận lúc {formatTime(c.absent_at)}</time>}
+                  </div>}
                 </div>
                 <StatusBadge status={c.status} />
               </div>
               {c.status === "NOT_ARRIVED" ? <div className="flex w-full gap-2">
                 <div className="min-w-0 flex-1"><Actions c={c} size="lg" /></div>
                 <Button variant="outline" className="h-12 shrink-0 px-3 text-red-700 hover:bg-red-50 hover:text-red-800 dark:text-red-300 dark:hover:bg-red-950/40"
-                  onClick={() => absent(c)} disabled={busyId === c.id} aria-label="Đánh vắng" title="Đánh vắng">
+                  onClick={() => openAbsenceNote(c)} disabled={busyId === c.id} aria-label="Đánh vắng" title="Đánh vắng">
                   {busyId === c.id ? <Loader2 className="animate-spin" /> : <UserX />}
                   <span className="hidden sm:inline">Vắng</span>
                 </Button>
@@ -428,6 +481,32 @@ export function CheckinBoard({
             <DialogFooter>
               <Button type="button" variant="outline" disabled={addingWalkIn} onClick={() => setWalkInOpen(false)}>Hủy</Button>
               <Button type="submit" disabled={addingWalkIn}>{addingWalkIn && <Loader2 className="animate-spin" />} Thêm và check-in</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={absenceCandidate !== null} onOpenChange={(open) => {
+        if (!savingAbsence && !open) { setAbsenceCandidate(null); setAbsenceNote(""); }
+      }}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Đánh vắng · {absenceCandidate?.full_name}</DialogTitle>
+            <DialogDescription>Ghi lại lý do hoặc thông tin liên hệ để đội Check-in và Điều phối theo dõi.</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={saveAbsence} className="grid gap-4">
+            <div className="grid gap-1.5">
+              <Label htmlFor="absence-note">Ghi chú</Label>
+              <Textarea id="absence-note" value={absenceNote} maxLength={2000} disabled={savingAbsence}
+                onChange={(event) => setAbsenceNote(event.target.value)}
+                placeholder="Ví dụ: xin chuyển ca chiều; đã gọi nhưng chưa liên lạc được…"
+                className="min-h-28 resize-y" />
+              <p className="text-right text-xs text-muted-foreground">{absenceNote.length}/2000</p>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" disabled={savingAbsence} onClick={() => setAbsenceCandidate(null)}>Hủy</Button>
+              <Button type="submit" variant="destructive" disabled={savingAbsence}>
+                {savingAbsence && <Loader2 className="animate-spin" />} Xác nhận vắng mặt
+              </Button>
             </DialogFooter>
           </form>
         </DialogContent>
