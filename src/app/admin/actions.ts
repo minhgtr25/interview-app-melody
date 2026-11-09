@@ -74,6 +74,75 @@ export async function createTableAccount(tableId: string): Promise<ActionResult<
   }
 }
 
+/** Gán tài khoản đại diện qua service role vì RLS không cho client sửa profiles. */
+export async function assignRoomTableAccounts(
+  roomId: string,
+  assignments: { tableId: string; profileId: string }[],
+  replaceExisting: boolean,
+): Promise<ActionResult> {
+  try {
+    await assertAdmin();
+    const admin = createServiceClient();
+    const { data: roomTables, error: tableError } = await admin.from("tables")
+      .select("id").eq("room_id", roomId);
+    if (tableError) throw tableError;
+    const tableIds = (roomTables ?? []).map((table) => table.id);
+    if (!tableIds.length) throw new Error("Phòng chưa có bàn");
+    const validTableIds = new Set(tableIds);
+    const profileIds = assignments.map((item) => item.profileId);
+    if (assignments.some((item) => !validTableIds.has(item.tableId)) ||
+      new Set(assignments.map((item) => item.tableId)).size !== assignments.length ||
+      new Set(profileIds).size !== profileIds.length) {
+      throw new Error("Danh sách tài khoản đại diện không hợp lệ");
+    }
+
+    const { data: current, error: currentError } = await admin.from("profiles")
+      .select("id,table_id").eq("role", "INTERVIEWER").in("table_id", tableIds);
+    if (currentError) throw currentError;
+    const { data: selected, error: selectedError } = profileIds.length
+      ? await admin.from("profiles").select("id,role,table_id").in("id", profileIds)
+      : { data: [], error: null };
+    if (selectedError) throw selectedError;
+    if ((selected ?? []).length !== profileIds.length || (selected ?? []).some((profile) =>
+      profile.role !== "INTERVIEWER" || (profile.table_id && !validTableIds.has(profile.table_id)))) {
+      throw new Error("Tài khoản Giám khảo không hợp lệ hoặc đang thuộc phòng khác");
+    }
+    if (!replaceExisting && assignments.some((item) => {
+      const profile = (selected ?? []).find((row) => row.id === item.profileId);
+      return profile?.table_id && profile.table_id !== item.tableId;
+    })) {
+      throw new Error("Tài khoản này đang đại diện bàn khác; chọn tài khoản chưa gán bàn");
+    }
+    if (!replaceExisting && assignments.some((item) => (current ?? []).some((profile) => profile.table_id === item.tableId && profile.id !== item.profileId))) {
+      throw new Error("Bàn đã có tài khoản đại diện");
+    }
+
+    try {
+      if (replaceExisting && (current ?? []).length) {
+        const { error } = await admin.from("profiles").update({ table_id: null })
+          .eq("role", "INTERVIEWER").in("table_id", tableIds);
+        if (error) throw error;
+      }
+      for (const item of assignments) {
+        const { error } = await admin.from("profiles").update({ table_id: item.tableId })
+          .eq("id", item.profileId).eq("role", "INTERVIEWER");
+        if (error) throw error;
+      }
+    } catch (error) {
+      if (profileIds.length) await admin.from("profiles").update({ table_id: null }).in("id", profileIds);
+      if (replaceExisting) for (const profile of current ?? []) {
+        await admin.from("profiles").update({ table_id: profile.table_id }).eq("id", profile.id);
+      }
+      throw error;
+    }
+    revalidatePath("/admin/rooms");
+    revalidatePath("/admin/accounts");
+    return { ok: true };
+  } catch (error) {
+    return fail(error);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Tài khoản
 // ---------------------------------------------------------------------------

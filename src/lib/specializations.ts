@@ -1,5 +1,3 @@
-import type { DepartmentCode } from "@/lib/departments";
-
 export const SPECIALIZATIONS_BY_DEPARTMENT = {
   CM: [
     { code: "HAT", name: "Hát" },

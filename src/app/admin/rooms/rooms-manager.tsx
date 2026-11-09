@@ -17,7 +17,7 @@ import { BUILDINGS, isBuildingCode, isRoomNumber, roomCode, type BuildingCode } 
 import { Input } from "@/components/ui/input";
 import { DEPARTMENTS, isDepartmentCode, type DepartmentCode } from "@/lib/departments";
 import type { InterviewTable, Profile, Room } from "@/lib/types";
-import { createTableAccount, deleteAccount } from "@/app/admin/actions";
+import { assignRoomTableAccounts, createTableAccount, deleteAccount } from "@/app/admin/actions";
 import { SPECIALIZATIONS_BY_DEPARTMENT, isSpecializedDepartment, isSpecializationForDepartment, specializationLabel, type SpecializationCode } from "@/lib/specializations";
 
 type TableSetup = { department: DepartmentCode | ""; specialization: SpecializationCode | ""; createAccount: boolean; judgeId: string };
@@ -33,12 +33,13 @@ type RoomForm = {
 const emptyTable = (): TableSetup => ({ department: "", specialization: "", createAccount: true, judgeId: "" });
 const emptyForm = (): RoomForm => ({ building: "", number: "", count: 2, isChallenge: false, externalChallenge: false, tables: [emptyTable(), emptyTable(), emptyTable(), emptyTable()] });
 
-function RoomFields({ form, setForm, judges, disabled, prefix }: {
+function RoomFields({ form, setForm, judges, disabled, prefix, occupiedExistingDeskCount }: {
   form: RoomForm;
   setForm: (form: RoomForm) => void;
   judges: Profile[];
   disabled: boolean;
   prefix: string;
+  occupiedExistingDeskCount?: number;
 }) {
   const selectedTables = form.tables.slice(0, form.count);
   const challengeDepartment = selectedTables[0]?.department;
@@ -46,17 +47,17 @@ function RoomFields({ form, setForm, judges, disabled, prefix }: {
     selectedTables.every((table) => table.department === challengeDepartment);
   const canConfigureChallenge = challengeDepartment === "HCTC" &&
     selectedTables.every((table) => table.department === challengeDepartment);
-  const changeTable = (index: number, patch: Partial<TableSetup>) => setForm({
-    ...form,
-    tables: form.tables.map((table, i) => i === index ? {
+  const changeTable = (index: number, patch: Partial<TableSetup>) => {
+    const nextTables = form.tables.map((table, i) => i === index ? {
       ...table, ...patch,
-      ...(patch.department && !isSpecializationForDepartment(patch.department, table.specialization) ? { specialization: "" } : {}),
-    } : table),
-    ...(patch.department && selectedTables.some((table, i) => i !== index && table.department !== patch.department)
-      ? { isChallenge: false, externalChallenge: false }
-      : patch.department && patch.department !== "HCTC" ? { isChallenge: false }
-      : patch.department && patch.department !== "VH" ? { externalChallenge: false } : {}),
-  });
+      ...(patch.department && !isSpecializationForDepartment(patch.department, table.specialization) ? { specialization: "" as const } : {}),
+    } : table);
+    const activeTables = nextTables.slice(0, form.count);
+    setForm({ ...form, tables: nextTables,
+      isChallenge: form.isChallenge && activeTables.every((table) => table.department === "HCTC"),
+      externalChallenge: form.externalChallenge && activeTables.every((table) => table.department === "VH"),
+    });
+  };
   return <div className="space-y-4">
     <div className="space-y-1.5">
       <p className="text-sm font-medium">1. Tòa học</p>
@@ -75,7 +76,10 @@ function RoomFields({ form, setForm, judges, disabled, prefix }: {
         <div className="flex gap-3">
           {([1, 2, 3, 4] as const).map((count) => <label key={count} className="flex items-center gap-1.5 text-sm">
             <input type="radio" name={`${prefix}-count`} checked={form.count === count}
-              onChange={() => setForm({ ...form, count })} />{count} bàn
+              onChange={() => setForm({ ...form, count,
+                isChallenge: form.isChallenge && form.tables.slice(0, count).every((table) => table.department === "HCTC"),
+                externalChallenge: form.externalChallenge && form.tables.slice(0, count).every((table) => table.department === "VH"),
+              })} />{count} bàn
           </label>)}
         </div>
       </fieldset>
@@ -93,6 +97,7 @@ function RoomFields({ form, setForm, judges, disabled, prefix }: {
         <span className="text-muted-foreground">Tạo tài khoản riêng cho Giám khảo Debate. Điều phối chỉ theo dõi; Giám khảo Debate nhận và chốt thí sinh.</span></span>
     </label>}
     {form.building && isRoomNumber(form.number) && <p className="text-sm font-semibold">Mã phòng: {roomCode(form.building, form.number)}</p>}
+    <h4 className="text-sm font-semibold">4. Cấu hình từng bàn</h4>
     <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
       {form.tables.slice(0, form.count).map((table, index) => <div key={index} className="space-y-3 rounded-lg border p-3">
         <p className="font-semibold">Bàn {index + 1}</p>
@@ -114,7 +119,8 @@ function RoomFields({ form, setForm, judges, disabled, prefix }: {
           <select aria-label={`Tài khoản đại diện Bàn ${index + 1}`} className="h-9 rounded-lg border border-input bg-background px-2"
             value={table.judgeId} disabled={disabled} onChange={(event) => changeTable(index, { judgeId: event.target.value })}>
             <option value="">Chọn tài khoản</option>
-            {judges.map((judge) => <option key={judge.id} value={judge.id}>{judge.full_name || judge.email}</option>)}
+            {judges.filter((judge) => occupiedExistingDeskCount === undefined || index < occupiedExistingDeskCount || !judge.table_id)
+              .map((judge) => <option key={judge.id} value={judge.id}>{judge.full_name || judge.email}</option>)}
           </select>
         </label>}
       </div>)}
@@ -132,7 +138,7 @@ function ExistingRoom({ room, tables, profiles, busy, onSave, onDelete }: {
 }) {
   const sorted = [...tables].sort((a, b) => a.sort_order - b.sort_order);
   const [editing, setEditing] = useState(false);
-  const [form, setForm] = useState<RoomForm>(() => ({
+  const currentForm = (): RoomForm => ({
     building: room.building_code ?? "",
     number: room.room_number ?? "",
     count: sorted.length >= 1 && sorted.length <= 4 ? sorted.length as 1 | 2 | 3 | 4 : 2,
@@ -144,7 +150,9 @@ function ExistingRoom({ room, tables, profiles, busy, onSave, onDelete }: {
       createAccount: !profiles.some((profile) => profile.role === "INTERVIEWER" && profile.table_id === sorted[index]?.id),
       judgeId: profiles.find((profile) => profile.role === "INTERVIEWER" && profile.table_id === sorted[index]?.id)?.id ?? "",
     })),
-  }));
+  });
+  const [form, setForm] = useState<RoomForm>(currentForm);
+  const openEditor = () => { setForm(currentForm()); setEditing(true); };
   const hasOccupiedTables = tables.some((table) => table.status !== "AVAILABLE");
   const roomTableIds = new Set(tables.map((table) => table.id));
   const availableJudges = profiles.filter((profile) => profile.role === "INTERVIEWER" &&
@@ -160,17 +168,21 @@ function ExistingRoom({ room, tables, profiles, busy, onSave, onDelete }: {
     </div>
     {!editing ? <>
       <ul className="space-y-1 text-sm">
-        {sorted.map((table) => <li key={table.id} className="flex justify-between gap-2 rounded-lg border px-3 py-2">
+        {sorted.map((table) => <li key={table.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2">
           <span>{table.name} ({table.department ?? "Chưa chọn Ban"}{table.specialization ? ` · ${specializationLabel(table.specialization)}` : ""})</span>
           <span className="text-muted-foreground">{profiles.find((profile) => profile.role === "INTERVIEWER" && profile.table_id === table.id)?.full_name || "Chưa có tài khoản đại diện"}</span>
+          <Button size="xs" variant="outline" onClick={openEditor} disabled={busy} aria-label={`Cấu hình ${room.name} - ${table.name}`}>
+            Cấu hình bàn
+          </Button>
         </li>)}
       </ul>
-      <Button variant="outline" onClick={() => setEditing(true)} disabled={busy}>Cấu hình phòng</Button>
+      <Button variant="outline" onClick={openEditor} disabled={busy}>Cấu hình phòng và bàn</Button>
     </> : <>
       {hasOccupiedTables && <p className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
         Phòng đang có bàn phỏng vấn. Bạn vẫn có thể tăng số bàn; thông tin và tài khoản các bàn hiện tại sẽ được giữ nguyên.
       </p>}
-      <RoomFields form={form} setForm={setForm} judges={availableJudges} disabled={busy} prefix={`room-${room.id}`} />
+      <RoomFields form={form} setForm={setForm} judges={availableJudges} disabled={busy}
+        prefix={`room-${room.id}`} occupiedExistingDeskCount={hasOccupiedTables ? sorted.length : undefined} />
       <div className="flex gap-2">
         <Button onClick={() => void onSave(room, form)} disabled={busy}>
           {busy && <Loader2 className="animate-spin" />} Lưu và kích hoạt
@@ -236,6 +248,14 @@ export function RoomsManager({ rooms, tables, profiles }: { rooms: Room[]; table
     const generatedIds: string[] = [];
     const credentials: { table: string; email: string; password: string }[] = [];
     try {
+      const [{ error: tableTrackError }, { error: oldRoomTrackError }] = await Promise.all([
+        supabase.from("tables").select("specialization").limit(1),
+        supabase.from("rooms").select("specialization").limit(1),
+      ]);
+      if (tableTrackError || !oldRoomTrackError) {
+        throw new Error("Database chưa hoàn tất migration 18. Chạy lại file 20261118_table_specializations.sql trước khi cấu hình bàn.");
+      }
+      if (oldRoomTrackError.code !== "42703") throw oldRoomTrackError;
       if (existing && !addOnlyWhileOccupied) {
         const { error } = await supabase.from("rooms").update({
           building_code: form.building, room_number: form.number, is_configured: false, is_challenge: form.isChallenge,
@@ -273,21 +293,17 @@ export function RoomsManager({ rooms, tables, profiles }: { rooms: Room[]; table
         const { error } = await supabase.from("tables").delete().in("id", currentTables.slice(form.count).map((table) => table.id));
         if (error) throw error;
       }
-      if (currentTables.length && !addOnlyWhileOccupied) {
-        const { error } = await supabase.from("profiles").update({ table_id: null })
-          .in("table_id", currentTables.map((table) => table.id));
-        if (error) throw error;
-      }
+      const existingAssignments = selected.slice(firstDeskToProcess, form.count)
+        .map((table, index) => ({ tableId: resultIds[firstDeskToProcess + index], profileId: table.judgeId }))
+        .filter((item) => !!item.profileId);
+      const accountResult = await assignRoomTableAccounts(roomId, existingAssignments, !addOnlyWhileOccupied);
+      if (!accountResult.ok) throw new Error(accountResult.error);
       for (let index = firstDeskToProcess; index < form.count; index++) {
         if (selected[index].createAccount) {
           const account = await createTableAccount(resultIds[index]);
           if (!account.ok || !account.data) throw new Error(account.ok ? "Không tạo được tài khoản" : account.error);
           generatedIds.push(account.data.id);
           credentials.push({ table: `${roomCode(form.building, form.number)} - Bàn ${index + 1}`, email: account.data.email, password: account.data.password });
-        } else {
-          const { error } = await supabase.from("profiles").update({ table_id: resultIds[index] })
-            .eq("id", selected[index].judgeId);
-          if (error) throw error;
         }
       }
       const { error: activationError } = await supabase.from("rooms").update({ is_configured: true }).eq("id", roomId);
@@ -299,7 +315,10 @@ export function RoomsManager({ rooms, tables, profiles }: { rooms: Room[]; table
     } catch (error) {
       for (const id of generatedIds) await deleteAccount(id);
       if (created && roomId) await supabase.from("rooms").delete().eq("id", roomId);
-      toast.error(errorMessage(error));
+      const message = errorMessage(error);
+      toast.error(message.includes("Chọn ngạch phù hợp với Ban của phòng")
+        ? "Database vẫn dùng cấu hình ngạch theo phòng. Chạy lại migration 18 trước khi lưu ngạch theo từng bàn."
+        : message);
     } finally {
       setBusy(false);
       if (!completed || !credentials.length) router.refresh();
