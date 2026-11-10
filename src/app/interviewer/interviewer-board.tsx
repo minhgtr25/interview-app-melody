@@ -316,8 +316,11 @@ export function InterviewerBoard({
   async function submit() {
     setConfirm(null);
     if (!candidate) return;
-    if (candidate.department === "CM" && table?.department === "CM" && draft.secondDepartment === "TT" && !draft.secondSpecialization)
-      return toast.error("Chọn ngạch Truyền Thông cho lượt phỏng vấn thứ hai");
+    if (candidate.department === "CM" && table?.department === "CM" &&
+      (draft.secondDepartment === "CM" || draft.secondDepartment === "TT") && !draft.secondSpecialization)
+      return toast.error(`Chọn ngạch ${draft.secondDepartment === "CM" ? "Chuyên Môn" : "Truyền Thông"} cho lượt tiếp theo`);
+    if (candidate.department === "CM" && draft.secondDepartment === "CM" && draft.secondSpecialization === candidate.specialization)
+      return toast.error("Lượt Chuyên Môn tiếp theo phải chọn ngạch khác ngạch hiện tại");
     if (draft.secondDepartment && (draft.secondDate || draft.secondTime) && !isFutureInterviewSlot(draft.secondDate, draft.secondTime, serverNow))
       return toast.error("Ca Ban thứ hai cần đủ ngày giờ chưa qua theo giờ Hà Nội");
     setBusy("submit");
@@ -329,7 +332,8 @@ export function InterviewerBoard({
       p_scores: draft.scores,
       p_comment: draft.comment,
       p_second_department: candidate.department === "CM" && table?.department === "CM" ? draft.secondDepartment || null : null,
-      p_second_specialization: candidate.department === "CM" && table?.department === "CM" && draft.secondDepartment === "TT" ? draft.secondSpecialization || null : null,
+      p_second_specialization: candidate.department === "CM" && table?.department === "CM" &&
+        (draft.secondDepartment === "CM" || draft.secondDepartment === "TT") ? draft.secondSpecialization || null : null,
       p_second_shift: candidate.department === "CM" && table?.department === "CM" && draft.secondDepartment && draft.secondDate && draft.secondTime
         ? makeInterviewShift(draft.secondDate, draft.secondTime, draft.secondDepartment) : null,
     });
@@ -655,20 +659,24 @@ export function InterviewerBoard({
               </div>
               {candidate.department === "CM" && table.department === "CM" && !candidate.source_candidate_id && (
                 <div className="rounded-2xl border bg-card p-4">
-                  <p className="mb-1 font-semibold">Nguyện vọng phỏng vấn Ban thứ hai</p>
-                  <p className="mb-3 text-sm text-muted-foreground">Chọn Ban thứ hai và lịch nếu thí sinh đã chốt. Chưa chốt lịch thì Điều phối sẽ nhận lượt có dấu ? để sắp xếp sau.</p>
+                  <p className="mb-1 font-semibold">Lượt phỏng vấn tiếp theo</p>
+                  <p className="mb-3 text-sm text-muted-foreground">Có thể chọn Ban khác như bình thường, hoặc chọn lại Chuyên Môn với ngạch khác. Chưa chốt lịch thì Điều phối sẽ nhận lượt có dấu ? để sắp xếp sau.</p>
                   <DepartmentRadio name={`second-department-${candidate.id}`} value={draft.secondDepartment}
-                    onChange={(value) => update({ secondDepartment: value, secondSpecialization: "", secondDate: "", secondTime: "" })} allowAll noneLabel="Không có Ban thứ hai" exclude="CM" />
-                  {draft.secondDepartment === "TT" && <label className="mt-3 grid gap-1.5 text-sm font-medium">Ngạch Truyền Thông
+                    onChange={(value) => update({ secondDepartment: value, secondSpecialization: "", secondDate: "", secondTime: "" })} allowAll noneLabel="Không có lượt tiếp theo" />
+                  {(draft.secondDepartment === "CM" || draft.secondDepartment === "TT") && <label className="mt-3 grid gap-1.5 text-sm font-medium">Ngạch {draft.secondDepartment === "CM" ? "Chuyên Môn" : "Truyền Thông"}
                     <select className="h-9 rounded-lg border border-input bg-background px-3" value={draft.secondSpecialization}
                       onChange={(event) => update({ secondSpecialization: event.target.value as SpecializationCode | "" })}>
                       <option value="">Chọn ngạch</option>
-                      {SPECIALIZATIONS_BY_DEPARTMENT.TT.map((item) => <option key={item.code} value={item.code}>{item.name}</option>)}
+                      {(draft.secondDepartment === "CM" ? SPECIALIZATIONS_BY_DEPARTMENT.CM : SPECIALIZATIONS_BY_DEPARTMENT.TT)
+                        .filter((item) => draft.secondDepartment !== "CM" || item.code !== candidate.specialization)
+                        .map((item) => <option key={item.code} value={item.code}>{item.name}</option>)}
                     </select>
                   </label>}
                   {draft.secondDepartment && <div className="mt-4 space-y-2 border-t pt-4">
-                    <p className="text-sm font-semibold">Lịch Ban thứ hai <span className="font-normal text-muted-foreground">· để trống nếu chưa chốt</span></p>
-                    {cand.rows.find((item) => item.source_candidate_id === candidate.id)?.shift && <p className="text-sm text-muted-foreground">Lịch đã nhập: {cand.rows.find((item) => item.source_candidate_id === candidate.id)?.shift}. Để trống sẽ giữ lịch này.</p>}
+                    <p className="text-sm font-semibold">Lịch lượt tiếp theo <span className="font-normal text-muted-foreground">· để trống nếu chưa chốt</span></p>
+                    {cand.rows.find((item) => item.source_candidate_id === candidate.id && item.department === draft.secondDepartment &&
+                      (draft.secondDepartment !== "CM" || item.specialization === draft.secondSpecialization))?.shift && <p className="text-sm text-muted-foreground">Lịch đã nhập: {cand.rows.find((item) => item.source_candidate_id === candidate.id && item.department === draft.secondDepartment &&
+                        (draft.secondDepartment !== "CM" || item.specialization === draft.secondSpecialization))?.shift}. Để trống sẽ giữ lịch này.</p>}
                     <ScheduleFields idPrefix="interviewer-followup" candidates={cand.rows} department={draft.secondDepartment}
                       date={draft.secondDate} time={draft.secondTime}
                       onDateChange={(secondDate) => update({ secondDate })} onTimeChange={(secondTime) => update({ secondTime })} />

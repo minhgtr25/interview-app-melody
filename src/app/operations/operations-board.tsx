@@ -14,20 +14,22 @@ import { useRealtimeRows } from "@/hooks/use-realtime-rows";
 import { DEPARTMENTS, type DepartmentCode } from "@/lib/departments";
 import { formatDateTime, formatDuration, normalizeText, safeUrl } from "@/lib/format";
 import { dayLabel, interviewDate, interviewDays, todayInVietnam } from "@/lib/interview-days";
-import { STATUS_LABEL, type Candidate, type CandidateStatus, type Evaluation, type InterviewTable, type Room, type RubricCriterion } from "@/lib/types";
+import { STATUS_LABEL, type Candidate, type CandidateDayHistory, type CandidateStatus, type Evaluation, type InterviewTable, type Room, type RubricCriterion } from "@/lib/types";
 import { groupCandidateApplications } from "@/components/candidate-applications";
 import { cn } from "@/lib/utils";
 
-export function OperationsBoard({ role, staffName, initialCandidates, initialEvaluations, initialTables, initialRooms, criteria }: {
+export function OperationsBoard({ role, staffName, initialCandidates, initialAbsenceHistory, initialEvaluations, initialTables, initialRooms, criteria }: {
   role: "ADMIN" | "SUPPORT_IT" | "COORDINATOR";
   staffName: string;
   initialCandidates: Candidate[];
+  initialAbsenceHistory: CandidateDayHistory[];
   initialEvaluations: Evaluation[];
   initialTables: InterviewTable[];
   initialRooms: Room[];
   criteria: RubricCriterion[];
 }) {
   const candidates = useRealtimeRows<Candidate>("candidates", initialCandidates);
+  const absenceHistory = useRealtimeRows<CandidateDayHistory>("candidate_day_history", initialAbsenceHistory, "recorded_at");
   const evaluations = useRealtimeRows<Evaluation>("evaluations", initialEvaluations);
   const tables = useRealtimeRows<InterviewTable>("tables", initialTables, "sort_order");
   const rooms = useRealtimeRows<Room>("rooms", initialRooms, "sort_order");
@@ -38,7 +40,7 @@ export function OperationsBoard({ role, staffName, initialCandidates, initialEva
   const [candidateStatus, setCandidateStatus] = useState<CandidateStatus | "">("");
   const [dayFilter, setDayFilter] = useState(() => {
     const today = todayInVietnam();
-    return interviewDays(initialCandidates).includes(today) ? today : "";
+    return [...new Set([...interviewDays(initialCandidates), ...initialAbsenceHistory.map((item) => item.interview_day)])].includes(today) ? today : "";
   });
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
@@ -57,14 +59,35 @@ export function OperationsBoard({ role, staffName, initialCandidates, initialEva
     return result;
   }, [evaluations.rows]);
   const roomById = useMemo(() => new Map(rooms.rows.map((item) => [item.id, item])), [rooms.rows]);
-  const availableDays = useMemo(() => interviewDays(candidates.rows), [candidates.rows]);
+  const availableDays = useMemo(() => [...new Set([
+    ...interviewDays(candidates.rows),
+    ...absenceHistory.rows.map((item) => item.interview_day),
+  ])].sort(), [candidates.rows, absenceHistory.rows]);
 
-  const visibleCandidates = useMemo(() => candidates.rows.filter((candidate) => {
-    if (dayFilter && interviewDate(candidate) !== dayFilter) return false;
-    if (department && candidate.department !== department) return false;
-    if (candidateStatus && candidate.status !== candidateStatus) return false;
-    return !search || normalizeText(`${candidate.code} ${candidate.student_number ?? ""} ${candidate.full_name} ${candidate.phone ?? ""} ${candidate.email ?? ""}`).includes(search);
-  }).sort((a, b) => a.code.localeCompare(b.code, "vi", { numeric: true })), [candidates.rows, dayFilter, department, candidateStatus, search]);
+  const visibleCandidateRows = useMemo(() => {
+    const liveRows = candidates.rows.filter((candidate) => {
+      if (dayFilter && interviewDate(candidate) !== dayFilter) return false;
+      if (department && candidate.department !== department) return false;
+      if (candidateStatus && candidate.status !== candidateStatus) return false;
+      return !search || normalizeText(`${candidate.code} ${candidate.student_number ?? ""} ${candidate.full_name} ${candidate.phone ?? ""} ${candidate.email ?? ""}`).includes(search);
+    }).map((candidate) => ({ key: candidate.id, candidate, history: null as CandidateDayHistory | null }));
+
+    const historicalRows = absenceHistory.rows.filter((item) => {
+      if (dayFilter && item.interview_day !== dayFilter) return false;
+      if (department && item.department !== department) return false;
+      if (candidateStatus && item.status !== candidateStatus) return false;
+      return !search || normalizeText(`${item.candidate_code} ${item.student_number ?? ""} ${item.full_name} ${item.phone ?? ""}`).includes(search);
+    }).map((history) => ({
+      key: `history-${history.id}`,
+      candidate: history.candidate_id ? candidateById.get(history.candidate_id) : undefined,
+      history,
+    }));
+
+    return [...liveRows, ...historicalRows].sort((a, b) =>
+      (a.history?.candidate_code ?? a.candidate?.code ?? "").localeCompare(b.history?.candidate_code ?? b.candidate?.code ?? "", "vi", { numeric: true }) ||
+      (a.history?.interview_day ?? "").localeCompare(b.history?.interview_day ?? ""),
+    );
+  }, [candidates.rows, absenceHistory.rows, candidateById, dayFilter, department, candidateStatus, search]);
 
   const groupByCandidate = useMemo(() => {
     const map = new Map<string, ReturnType<typeof groupCandidateApplications>[number]>();
@@ -92,8 +115,8 @@ export function OperationsBoard({ role, staffName, initialCandidates, initialEva
   const selectedEvaluation = selectedCandidate ? evaluationByCandidate.get(selectedCandidate.id) : undefined;
   const selectedTable = selectedTableId ? tables.rows.find((table) => table.id === selectedTableId) : undefined;
   const tableHistory = selectedTable ? historyByTable.get(selectedTable.id) ?? [] : [];
-  const status = [candidates.status, evaluations.status, tables.status, rooms.status].includes("offline") ? "offline"
-    : [candidates.status, evaluations.status, tables.status, rooms.status].every((item) => item === "live") ? "live" : "connecting";
+  const status = [candidates.status, absenceHistory.status, evaluations.status, tables.status, rooms.status].includes("offline") ? "offline"
+    : [candidates.status, absenceHistory.status, evaluations.status, tables.status, rooms.status].every((item) => item === "live") ? "live" : "connecting";
 
   return <div className="min-h-dvh bg-muted/30">
     <AppHeader title="Tra cứu thí sinh & quản lý bàn" subtitle={staffName} status={status}>
@@ -136,35 +159,38 @@ export function OperationsBoard({ role, staffName, initialCandidates, initialEva
           </Button>}
         </div>
         <DepartmentRadio name="operations-department" value={department} onChange={setDepartment} allowAll />
-        {view === "candidates" && <p className="text-xs text-muted-foreground" aria-live="polite">Đang hiển thị {visibleCandidates.length}/{candidates.rows.length} lượt phỏng vấn</p>}
+        {view === "candidates" && <p className="text-xs text-muted-foreground" aria-live="polite">Đang hiển thị {visibleCandidateRows.length}/{candidates.rows.length + absenceHistory.rows.length} lượt phỏng vấn và lịch sử vắng</p>}
       </div>
 
       {view === "candidates" ? <div className="overflow-x-auto rounded-xl border bg-card">
         <Table>
           <TableHeader><TableRow>
             <TableHead>Mã</TableHead><TableHead>MSSV</TableHead><TableHead>Họ tên</TableHead><TableHead>SĐT</TableHead>
-            <TableHead>Ban</TableHead><TableHead>Ca</TableHead><TableHead>Trạng thái</TableHead>
+            <TableHead>Ban</TableHead><TableHead>Ca</TableHead><TableHead>Trạng thái</TableHead><TableHead>Ghi chú vắng</TableHead>
             <TableHead>Phòng - Bàn đã thi</TableHead><TableHead>Người bổ sung</TableHead>
             <TableHead className="text-right">Điểm TB</TableHead><TableHead className="text-right">Chi tiết</TableHead>
           </TableRow></TableHeader>
           <TableBody>
-            {visibleCandidates.map((candidate) => {
-              const evaluation = evaluationByCandidate.get(candidate.id);
-              return <TableRow key={candidate.id} className="cursor-pointer hover:bg-muted/40" onClick={() => setSelectedCandidateId(candidate.id)}>
-                <TableCell className="font-mono text-xs">{candidate.code}</TableCell>
-                <TableCell className="font-mono text-xs">{candidate.student_number || "—"}</TableCell>
-                <TableCell className="font-medium">{candidate.full_name}</TableCell>
-                <TableCell>{candidate.phone || "—"}</TableCell>
-                <TableCell>{groupByCandidate.get(candidate.id)?.departments.join(" · ") || candidate.department || "—"}</TableCell>
-                <TableCell>{groupByCandidate.get(candidate.id)?.shifts.join(" ; ") || candidate.shift || "—"}</TableCell>
-                <TableCell><StatusBadge status={candidate.status} /></TableCell>
-                <TableCell>{evaluation?.table_label || (candidate.table_id ? `${roomById.get(tables.rows.find((table) => table.id === candidate.table_id)?.room_id ?? "")?.name ?? ""} - ${tables.rows.find((table) => table.id === candidate.table_id)?.name ?? ""}` : "—")}</TableCell>
-                <TableCell>{candidate.added_by_name || "—"}</TableCell>
+            {visibleCandidateRows.map(({ key, candidate, history }) => {
+              const evaluation = candidate && !history ? evaluationByCandidate.get(candidate.id) : undefined;
+              const group = candidate ? groupByCandidate.get(candidate.id) : undefined;
+              return <TableRow key={key} className={candidate && !history ? "cursor-pointer hover:bg-muted/40" : "bg-red-50/40 dark:bg-red-950/10"}
+                onClick={candidate && !history ? () => setSelectedCandidateId(candidate.id) : undefined}>
+                <TableCell className="font-mono text-xs">{history?.candidate_code ?? candidate?.code ?? "—"}</TableCell>
+                <TableCell className="font-mono text-xs">{history?.student_number ?? candidate?.student_number ?? "—"}</TableCell>
+                <TableCell className="font-medium">{history?.full_name ?? candidate?.full_name ?? "Thí sinh đã xóa"}</TableCell>
+                <TableCell>{history?.phone ?? candidate?.phone ?? "—"}</TableCell>
+                <TableCell>{history?.department ?? group?.departments.join(" · ") ?? candidate?.department ?? "—"}</TableCell>
+                <TableCell>{history?.shift ?? group?.shifts.join(" ; ") ?? candidate?.shift ?? "—"}</TableCell>
+                <TableCell><StatusBadge status={history?.status ?? candidate?.status ?? "ABSENT"} /></TableCell>
+                <TableCell className="max-w-64 whitespace-normal text-xs text-muted-foreground">{history?.absent_note ?? candidate?.absent_note ?? "—"}</TableCell>
+                <TableCell>{evaluation?.table_label || (candidate?.table_id ? `${roomById.get(tables.rows.find((table) => table.id === candidate.table_id)?.room_id ?? "")?.name ?? ""} - ${tables.rows.find((table) => table.id === candidate.table_id)?.name ?? ""}` : "—")}</TableCell>
+                <TableCell>{candidate?.added_by_name || "—"}</TableCell>
                 <TableCell className="text-right font-semibold tabular-nums">{evaluation?.average_score == null ? "—" : Number(evaluation.average_score).toFixed(2)}</TableCell>
-                <TableCell className="text-right"><Button size="xs" variant="outline" onClick={(event) => { event.stopPropagation(); setSelectedCandidateId(candidate.id); }}>Xem</Button></TableCell>
+                <TableCell className="text-right">{candidate && !history && <Button size="xs" variant="outline" onClick={(event) => { event.stopPropagation(); setSelectedCandidateId(candidate.id); }}>Xem</Button>}</TableCell>
               </TableRow>;
             })}
-            {visibleCandidates.length === 0 && <TableRow><TableCell colSpan={11} className="py-12 text-center text-muted-foreground">Không tìm thấy thí sinh.</TableCell></TableRow>}
+            {visibleCandidateRows.length === 0 && <TableRow><TableCell colSpan={12} className="py-12 text-center text-muted-foreground">Không tìm thấy thí sinh.</TableCell></TableRow>}
           </TableBody>
         </Table>
       </div> : <div className="space-y-5">

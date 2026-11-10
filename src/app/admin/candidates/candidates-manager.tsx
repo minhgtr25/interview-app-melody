@@ -282,7 +282,7 @@ export function CandidatesManager({
               return (
                 <TableRow key={c.id}>
                   <TableCell className="whitespace-normal">
-                    <p className="break-words font-semibold">{c.full_name}{c.source_candidate_id && <span className="ml-1.5 inline-block rounded bg-violet-100 px-1.5 py-0.5 align-middle text-[10px] font-semibold text-violet-800">Ban khác</span>}</p>
+                    <p className="break-words font-semibold">{c.full_name}{c.source_candidate_id && <span className="ml-1.5 inline-block rounded bg-violet-100 px-1.5 py-0.5 align-middle text-[10px] font-semibold text-violet-800">Lượt bổ sung</span>}</p>
                     <p className="mt-1 truncate font-mono text-xs text-muted-foreground">{c.code} · MSSV {c.student_number || group?.primary.student_number || c.student_number_raw || "—"}</p>
                   </TableCell>
                   <TableCell className="whitespace-normal text-sm">{c.department || "—"}{c.specialization ? <span className="mt-0.5 block text-xs text-muted-foreground">{specializationLabel(c.specialization)}</span> : isSpecializedDepartment(c.department) && <span className="mt-0.5 block text-xs font-medium text-amber-700">Chưa chọn ngạch</span>}</TableCell>
@@ -315,7 +315,7 @@ export function CandidatesManager({
             <article key={c.id} className="rounded-xl border bg-card p-3 shadow-sm shadow-black/[0.03]">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <p className="break-words font-semibold leading-snug">{c.full_name}{c.source_candidate_id && <span className="ml-1.5 inline-block rounded bg-violet-100 px-1.5 py-0.5 align-middle text-[10px] font-semibold text-violet-800">Ban khác</span>}</p>
+                  <p className="break-words font-semibold leading-snug">{c.full_name}{c.source_candidate_id && <span className="ml-1.5 inline-block rounded bg-violet-100 px-1.5 py-0.5 align-middle text-[10px] font-semibold text-violet-800">Lượt bổ sung</span>}</p>
                   <p className="mt-1 truncate font-mono text-xs text-muted-foreground">{c.code} · MSSV {c.student_number || group?.primary.student_number || c.student_number_raw || "—"}</p>
                 </div>
                 {renderActions(c)}
@@ -345,11 +345,11 @@ export function CandidatesManager({
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Ca phỏng vấn · {scheduleRows[0]?.full_name}</DialogTitle>
-            <DialogDescription>Mỗi Ban có một Ca và một phiếu kết quả riêng. Sửa lịch không thay đổi kết quả đã chấm.</DialogDescription>
+            <DialogDescription>Mỗi lượt, kể cả Chuyên Môn ở ngạch khác, có Ca và phiếu kết quả riêng. Sửa lịch không thay đổi kết quả đã chấm.</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             {scheduleRows.map((row) => <div key={row.id} className="grid gap-2 rounded-lg border p-3 sm:grid-cols-[5rem_1fr_8rem] sm:items-end">
-              <span className="font-semibold">{row.department}</span>
+              <span className="font-semibold">{row.department}{row.specialization ? ` · ${specializationLabel(row.specialization)}` : ""}</span>
               <div className="grid gap-1"><Label htmlFor={`day-${row.id}`}>Ngày</Label><Input id={`day-${row.id}`} type="date" value={scheduleDraft[row.id]?.date ?? ""}
                 onChange={(event) => setScheduleDraft((current) => ({ ...current, [row.id]: { ...current[row.id], date: event.target.value } }))} /></div>
               <div className="grid gap-1"><Label htmlFor={`time-${row.id}`}>Giờ</Label><Input id={`time-${row.id}`} type="time" value={scheduleDraft[row.id]?.time ?? ""}

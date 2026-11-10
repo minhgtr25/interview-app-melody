@@ -108,6 +108,24 @@ export interface Candidate {
   updated_at: string;
 }
 
+export interface CandidateDayHistory {
+  id: string;
+  candidate_id: string | null;
+  interview_day: string;
+  candidate_code: string;
+  student_number: string | null;
+  full_name: string;
+  phone: string | null;
+  department: string | null;
+  specialization: import("@/lib/specializations").SpecializationCode | null;
+  shift: string;
+  status: CandidateStatus;
+  absent_note: string | null;
+  checked_in_at: string | null;
+  absent_at: string | null;
+  recorded_at: string;
+}
+
 export interface ScheduleRequest {
   id: string;
   candidate_id: string;
