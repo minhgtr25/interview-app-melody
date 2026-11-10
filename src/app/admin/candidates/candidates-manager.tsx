@@ -286,7 +286,7 @@ export function CandidatesManager({
                     <p className="mt-1 truncate font-mono text-xs text-muted-foreground">{c.code} · MSSV {c.student_number || group?.primary.student_number || c.student_number_raw || "—"}</p>
                   </TableCell>
                   <TableCell className="whitespace-normal text-sm">{c.department || "—"}{c.specialization ? <span className="mt-0.5 block text-xs text-muted-foreground">{specializationLabel(c.specialization)}</span> : isSpecializedDepartment(c.department) && <span className="mt-0.5 block text-xs font-medium text-amber-700">Chưa chọn ngạch</span>}</TableCell>
-                  <TableCell className="whitespace-normal text-xs"><span className="block">{c.shift || "Chưa có Ca"}</span>{group && interviewDays(group.applications).length > 1 && <Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={() => openSchedule(c)}>2 ngày · sửa lịch</Button>}</TableCell>
+                  <TableCell className="whitespace-normal text-xs"><span className="block">{c.shift || "Chưa có Ca"}</span>{c.interview_note && <span className="mt-1 block font-medium text-amber-700">{c.interview_note}</span>}{group && interviewDays(group.applications).length > 1 && <Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={() => openSchedule(c)}>2 ngày · sửa lịch</Button>}</TableCell>
                   <TableCell className="whitespace-normal">{renderStatus(c)}</TableCell>
                   <TableCell className="text-right tabular-nums">
                     <span className="font-semibold">{e?.average_score != null ? Number(e.average_score).toFixed(2) : "—"}</span>

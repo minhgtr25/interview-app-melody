@@ -100,6 +100,7 @@ export interface Candidate {
   duration_seconds: number | null;
   absent_at: string | null;
   absent_note: string | null;
+  interview_note: string | null;
   added_by_id: string | null;
   added_by_name: string | null;
   added_by_email: string | null;

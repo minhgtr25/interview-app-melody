@@ -196,7 +196,7 @@ export function exportResults(
   const crit = [...criteria].sort((a, b) => a.sort_order - b.sort_order);
 
   const header = [
-    "Mã ứng viên", "MSSV", "MSSV cần xác minh", "Lượt phỏng vấn", "Họ tên", "Khóa", "Giới tính", "SĐT", "Email", "Facebook", "Ban ứng tuyển", "Ngạch", "Ngày phỏng vấn", "Ca phỏng vấn", "Trạng thái",
+    "Mã ứng viên", "MSSV", "MSSV cần xác minh", "Lượt phỏng vấn", "Họ tên", "Khóa", "Giới tính", "SĐT", "Email", "Facebook", "Ban ứng tuyển", "Ngạch", "Ngày phỏng vấn", "Ca phỏng vấn", "Trạng thái", "Ghi chú phỏng vấn",
     ...crit.map((c) => `${c.name} (/${c.max_score})`),
     "Điểm TB (/10)", "Nhận xét", "Thời lượng (mm:ss)", "Người chấm", "Phòng - Bàn",
     ...crit.map((c) => `Thử thách · ${c.name} (/${c.max_score})`),
@@ -217,7 +217,7 @@ export function exportResults(
     return [
       c.code, c.student_number ?? source?.student_number ?? "", c.student_number_raw ?? "", source ? `Lượt 2 từ ${source.code}` : "Lượt 1", c.full_name, c.student_cohort ?? "",
       GENDERS.find((gender) => gender.code === c.gender)?.name ?? "", c.phone ?? "", c.email ?? "",
-      c.facebook_url ?? "", c.department ?? "", specializationLabel(c.specialization) ?? "", interviewDate(c) ? dayLabel(interviewDate(c)!) : "", c.shift ?? "", STATUS_LABEL[c.status],
+      c.facebook_url ?? "", c.department ?? "", specializationLabel(c.specialization) ?? "", interviewDate(c) ? dayLabel(interviewDate(c)!) : "", c.shift ?? "", STATUS_LABEL[c.status], c.interview_note ?? "",
       ...crit.map((k) => (e?.scores?.[k.id] != null ? Number(e.scores[k.id]) : "")),
       e?.average_score != null ? Number(e.average_score) : "",
       e?.comment ?? "",

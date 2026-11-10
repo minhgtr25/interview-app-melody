@@ -49,7 +49,7 @@ export function CheckinBoard({
   activeDay?: string;
   staffName: string;
 }) {
-  const { rows, setRows, patchRow, status } = useRealtimeRows<Candidate>("candidates", initialCandidates);
+  const { rows, setRows, patchRow, status, refetch } = useRealtimeRows<Candidate>("candidates", initialCandidates);
   const serverNow = useServerNow(30_000);
   useInterviewDayAutoSwitch(activeDay);
   const [query, setQuery] = useState("");
@@ -101,7 +101,9 @@ export function CheckinBoard({
     return rows
       .filter((c) => {
         if (absenceManager && c.status !== "ABSENT") return false;
-        if (day && interviewDate(c) !== day && (interviewDate(c) || c.status === "COMPLETED")) return false;
+        const candidateDay = interviewDate(c);
+        const earlyArrival = day === today && !!candidateDay && candidateDay > today && c.status === "NOT_ARRIVED";
+        if (day && candidateDay !== day && (candidateDay || c.status === "COMPLETED") && !earlyArrival) return false;
         if (shift && c.shift !== shift) return false;
         if (dept && c.department !== dept) return false;
         if (statusFilter && c.status !== statusFilter) return false;
@@ -120,7 +122,7 @@ export function CheckinBoard({
         const pb = b.status === "NOT_ARRIVED" ? 0 : 1;
         return pa - pb || a.code.localeCompare(b.code, "vi", { numeric: true });
       });
-  }, [rows, deferredQuery, shift, dept, statusFilter, absenceManager, day, groupByCandidate]);
+  }, [rows, deferredQuery, shift, dept, statusFilter, absenceManager, day, groupByCandidate, today]);
 
   const counts = useMemo(() => {
     const scoped = rows.filter((row) => !day || interviewDate(row) === day || (!interviewDate(row) && row.status !== "COMPLETED"));
@@ -132,7 +134,7 @@ export function CheckinBoard({
 
   async function run(c: Candidate, fn: string, optimistic: Partial<Candidate>, okMsg: string) {
     setBusyId(c.id);
-    const before = { status: c.status, checked_in_at: c.checked_in_at, absent_at: c.absent_at, absent_note: c.absent_note };
+    const before = { status: c.status, checked_in_at: c.checked_in_at, absent_at: c.absent_at, absent_note: c.absent_note, shift: c.shift, interview_note: c.interview_note };
     patchRow(c.id, optimistic);
     const { error } = await createClient().rpc(fn, { p_candidate_id: c.id });
     setBusyId(null);
@@ -151,17 +153,24 @@ export function CheckinBoard({
     toast.success(okMsg);
   }
 
-  const checkIn = (c: Candidate) => {
-    if (interviewDate(c) && interviewDate(c) !== todayInVietnam(serverNow)) {
+  const checkIn = async (c: Candidate) => {
+    const today = todayInVietnam(serverNow);
+    const scheduledDay = interviewDate(c);
+    const early = !!scheduledDay && scheduledDay > today;
+    if (scheduledDay && scheduledDay < today) {
       toast.error("Ca không thuộc ngày hôm nay. Gửi yêu cầu đổi lịch trước khi check-in.");
       return;
     }
-    return run(
+    if (early && !window.confirm(`Xác nhận phỏng vấn sớm hôm nay? Ca ${c.shift} sẽ chuyển sang hôm nay và lưu lịch ban đầu.`)) return;
+
+    await run(
       c,
       "check_in_candidate",
-      { status: "CHECKED_IN", checked_in_at: new Date().toISOString(), absent_at: null, absent_note: null },
+      { status: "CHECKED_IN", checked_in_at: new Date().toISOString(), absent_at: null, absent_note: null,
+        ...(early ? { shift: `${dayLabel(today)}${c.shift?.slice(10) ?? ""}` } : {}) },
       `Đã check-in: ${c.full_name}`
     );
+    if (early) await refetch();
   };
   const undo = (c: Candidate) =>
     run(c, "undo_check_in", { status: "NOT_ARRIVED", checked_in_at: null }, `Đã hoàn tác: ${c.full_name}`);
@@ -203,7 +212,7 @@ export function CheckinBoard({
       patchRow(candidate.id, { absent_note: note || null });
       toast.success(`Đã cập nhật ghi chú: ${candidate.full_name}`);
     } else {
-      patchRow(candidate.id, { status: "ABSENT", absent_at: new Date().toISOString(), absent_note: note || null });
+      await refetch();
       toast.success(`Đã đánh vắng: ${candidate.full_name}`);
     }
     setAbsenceCandidate(null);
@@ -269,7 +278,7 @@ export function CheckinBoard({
           )}
         >
           {busy ? <Loader2 className="animate-spin" /> : <Check />}
-          {c.status === "ABSENT" ? "Check-in lại" : "Điểm danh"}
+          {interviewDate(c) && interviewDate(c)! > today ? "Điểm danh sớm" : c.status === "ABSENT" ? "Check-in lại" : "Điểm danh"}
         </Button>
       );
     }
@@ -467,6 +476,7 @@ export function CheckinBoard({
                   <p className="mt-1 text-xs text-muted-foreground">
                     {[c.department, specializationLabel(c.specialization), c.shift].filter(Boolean).join(" · ")}
                   </p>
+                  {c.interview_note && <p className="mt-1 text-xs font-medium text-amber-700">{c.interview_note}</p>}
                   {c.status === "ABSENT" && <div className="mt-3 rounded-lg bg-amber-50 p-3 text-sm dark:bg-amber-950/30">
                     <p className="text-xs font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-200">Ghi chú vắng mặt</p>
                     <p className="mt-1 whitespace-pre-wrap break-words">{c.absent_note || "Chưa có ghi chú"}</p>
