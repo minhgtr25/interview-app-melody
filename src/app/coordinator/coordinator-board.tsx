@@ -30,7 +30,8 @@ import { errorMessage, normalizeText } from "@/lib/format";
 import type { Candidate, InterviewTable, OpsMessage, Profile, Room } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { DEPARTMENTS } from "@/lib/departments";
-import { isSpecializationForDepartment, isSpecializedDepartment, specializationLabel } from "@/lib/specializations";
+import { isSpecializationForDepartment, isSpecializedDepartment, specializationLabel, SPECIALIZATIONS_BY_DEPARTMENT } from "@/lib/specializations";
+import type { SpecializationCode } from "@/lib/specializations";
 import type { DepartmentCode } from "@/lib/departments";
 import { DepartmentRadio } from "@/components/department-radio";
 import { groupCandidateApplications } from "@/components/candidate-applications";
@@ -79,6 +80,7 @@ export function CoordinatorBoard({
     .filter((profile) => profile.role === "INTERVIEWER" && profile.table_id)
     .map((profile) => profile.table_id!)), [profileRows.rows]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [dispatchSpecializations, setDispatchSpecializations] = useState<Record<string, SpecializationCode | "">>({});
   const [dragOverTable, setDragOverTable] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<Confirm>(null);
@@ -249,6 +251,9 @@ export function CoordinatorBoard({
   const selected = selectedId ? candById.get(selectedId) : undefined;
   // Bỏ chọn nếu thí sinh đã rời hàng chờ (do người khác gán)
   const selectedValid = selected && queue.some((candidate) => candidate.id === selected.id) ? selected : undefined;
+  function specializationForDispatch(candidate: Candidate) {
+    return dispatchSpecializations[candidate.id] ?? candidate.specialization ?? "";
+  }
 
   async function assign(candidateId: string, table: InterviewTable) {
     if (!dayReady) return toast.error("Chưa thể điều phối: hệ thống đang chờ bố trí phòng ngày hôm nay");
@@ -262,14 +267,18 @@ export function CoordinatorBoard({
     const configurationIssue = tableConfigurationIssue(table);
     if (configurationIssue) return toast.error(`Bàn chưa sẵn sàng: ${configurationIssue}`);
     if (!table.department || c.department !== table.department) return toast.error("Ban của thí sinh không khớp Ban phụ trách bàn");
-    if (isSpecializedDepartment(c.department) && (!c.specialization || table.specialization !== c.specialization))
-      return toast.error("Ngạch của thí sinh không khớp ngạch phụ trách bàn; Admin cần gán ngạch cho thí sinh nếu còn thiếu");
-    if (!isSpecializedDepartment(c.department) && c.specialization) return toast.error("Dữ liệu ngạch của thí sinh không hợp lệ với Ban này; Admin cần kiểm tra lại");
+    const specialization = isSpecializedDepartment(c.department) ? specializationForDispatch(c) : "";
+    if (isSpecializedDepartment(c.department) && !isSpecializationForDepartment(c.department, specialization))
+      return toast.error("Điều phối cần chọn ngạch trước khi đẩy thí sinh vào bàn");
+    if (isSpecializedDepartment(c.department) && table.specialization !== specialization)
+      return toast.error("Ngạch đã chọn không khớp ngạch phụ trách bàn");
     setBusy(table.id);
     const now = new Date().toISOString();
-    cand.patchRow(c.id, { status: "ASSIGNED", table_id: table.id, assigned_at: now });
+    cand.patchRow(c.id, { status: "ASSIGNED", table_id: table.id, assigned_at: now, specialization: specialization || null });
     tbl.patchRow(table.id, { status: "ASSIGNED", current_candidate_id: c.id, assigned_at: now });
-    const { error } = await createClient().rpc("assign_candidate", { p_candidate_id: c.id, p_table_id: table.id });
+    const { error } = await createClient().rpc("assign_candidate", {
+      p_candidate_id: c.id, p_table_id: table.id, p_specialization: specialization || null,
+    });
     setBusy(null);
     if (error) {
       toast.error(errorMessage(error));
@@ -334,8 +343,7 @@ export function CoordinatorBoard({
     }
     const targetRoom = roomById.get(t.room_id);
     if (targetRoom?.is_challenge || !targetRoom?.is_configured || tableConfigurationIssue(t) || !t.department || selectedValid.department !== t.department ||
-      (isSpecializedDepartment(selectedValid.department) && (!selectedValid.specialization || t.specialization !== selectedValid.specialization)) ||
-      (!isSpecializedDepartment(selectedValid.department) && !!selectedValid.specialization)) return;
+      (isSpecializedDepartment(selectedValid.department) && (!isSpecializationForDepartment(selectedValid.department, specializationForDispatch(selectedValid)) || t.specialization !== specializationForDispatch(selectedValid)))) return;
     void assign(selectedValid.id, t);
   }
 
@@ -399,6 +407,22 @@ export function CoordinatorBoard({
                   {c.department && ` · ${c.department}`}{c.specialization && ` · ${specializationLabel(c.specialization)}`}
                 </p>
                 {c.shift && <p className="truncate text-xs text-muted-foreground">Ca {c.shift}</p>}
+                {isSpecializedDepartment(c.department) && <label className="mt-2 block w-full" onClick={(event) => event.stopPropagation()}>
+                  <span className="mb-1 block text-xs font-medium text-foreground">Chọn ngạch trước khi phân bàn</span>
+                  <select
+                    className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs"
+                    value={specializationForDispatch(c)}
+                    aria-label={`Chọn ngạch cho ${c.full_name}`}
+                    onChange={(event) => setDispatchSpecializations((current) => ({
+                      ...current, [c.id]: event.target.value as SpecializationCode | "",
+                    }))}
+                  >
+                    <option value="">Chọn ngạch</option>
+                    {SPECIALIZATIONS_BY_DEPARTMENT[c.department].map((item) => (
+                      <option key={item.code} value={item.code}>{item.name}</option>
+                    ))}
+                  </select>
+                </label>}
               </div>
               <div className="flex shrink-0 flex-col items-end gap-1">
                 <span className="inline-flex items-center gap-1 text-xs text-muted-foreground tabular-nums" title="Thời gian chờ">
@@ -469,16 +493,17 @@ export function CoordinatorBoard({
               const interviewing = t.status === "INTERVIEWING";
               const configIssue = tableConfigurationIssue(t);
               const tableConfigured = !configIssue;
+              const selectedSpecialization = selectedValid && isSpecializedDepartment(selectedValid.department) ? specializationForDispatch(selectedValid) : "";
               const eligible = dayReady && free && !t.is_paused && !room.is_challenge && !!selectedValid && !(selectedValid.source_candidate_id && !selectedValid.shift) && room.is_configured && tableConfigured && !!t.department && selectedValid.department === t.department &&
                 (isSpecializedDepartment(selectedValid.department)
-                  ? !!selectedValid.specialization && t.specialization === selectedValid.specialization
-                  : !selectedValid.specialization);
+                  ? isSpecializationForDepartment(selectedValid.department, selectedSpecialization) && t.specialization === selectedSpecialization
+                  : true);
               const isOver = dragOverTable === t.id && eligible;
               return (
                 <div
                   key={t.id}
                   onDragOver={(e) => {
-                    if (!dayReady || !free || t.is_paused || room.is_challenge || !room.is_configured || !tableConfigured || !t.department || (selectedValid && (selectedValid.department !== t.department || (isSpecializedDepartment(selectedValid.department) ? (!selectedValid.specialization || t.specialization !== selectedValid.specialization) : !!selectedValid.specialization)))) return;
+                    if (!dayReady || !free || t.is_paused || room.is_challenge || !room.is_configured || !tableConfigured || !t.department || (selectedValid && (selectedValid.department !== t.department || (isSpecializedDepartment(selectedValid.department) ? (!isSpecializationForDepartment(selectedValid.department, specializationForDispatch(selectedValid)) || t.specialization !== specializationForDispatch(selectedValid)) : false)))) return;
                     e.preventDefault();
                     e.dataTransfer.dropEffect = "move";
                     setDragOverTable(t.id);
@@ -547,7 +572,7 @@ export function CoordinatorBoard({
 
                   {free ? (
                     <p className="mt-auto text-sm text-emerald-800/80 dark:text-emerald-200/80">
-                      {room.is_challenge ? "Phòng Debate · Giám khảo tự nhận" : t.is_paused ? "Đang tạm dừng tiếp nhận thí sinh" : !room.is_configured ? "Phòng chưa kích hoạt" : configIssue ? configIssue : selectedValid ? eligible ? "Bấm để gán" : isSpecializedDepartment(selectedValid.department) && !selectedValid.specialization ? "Chưa được gán ngạch" : "Khác Ban / ngạch" : "Sẵn sàng · kéo thả thí sinh vào đây"}
+                      {room.is_challenge ? "Phòng Debate · Giám khảo tự nhận" : t.is_paused ? "Đang tạm dừng tiếp nhận thí sinh" : !room.is_configured ? "Phòng chưa kích hoạt" : configIssue ? configIssue : selectedValid ? eligible ? "Bấm để gán" : isSpecializedDepartment(selectedValid.department) && !isSpecializationForDepartment(selectedValid.department, specializationForDispatch(selectedValid)) ? "Chọn ngạch cho thí sinh trước" : "Khác Ban / ngạch" : "Sẵn sàng · kéo thả thí sinh vào đây"}
                     </p>
                   ) : (
                     <>
