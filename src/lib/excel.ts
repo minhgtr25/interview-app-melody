@@ -4,6 +4,7 @@ import { isSpecializationForDepartment, specializationLabel } from "@/lib/specia
 import { formatDateTime, formatDuration, normalizePhone, normalizeText, safeUrl } from "@/lib/format";
 import { GENDERS, normalizeGender, normalizeStudentNumber } from "@/lib/personal-info";
 import { interviewDate, dayLabel } from "@/lib/interview-days";
+import { createCandidateApplicationStatusResolver } from "@/lib/candidate-application-status";
 import {
   STATUS_LABEL,
   type Candidate,
@@ -187,6 +188,8 @@ export function exportResults(
   filter?: { department?: string; day?: string },
 ) {
   const allCandidates = candidates;
+  const allEvaluations = evaluations;
+  const getApplicationStatus = createCandidateApplicationStatusResolver(allCandidates, allEvaluations);
   if (filter?.department) candidates = candidates.filter((candidate) => candidate.department === filter.department);
   if (filter?.day) candidates = candidates.filter((candidate) => interviewDate(candidate) === filter.day);
   const candidateIds = new Set(candidates.map((candidate) => candidate.id));
@@ -217,7 +220,7 @@ export function exportResults(
     return [
       c.code, c.student_number ?? source?.student_number ?? "", c.student_number_raw ?? "", source ? `Lượt 2 từ ${source.code}` : "Lượt 1", c.full_name, c.student_cohort ?? "",
       GENDERS.find((gender) => gender.code === c.gender)?.name ?? "", c.phone ?? "", c.email ?? "",
-      c.facebook_url ?? "", c.department ?? "", specializationLabel(c.specialization) ?? "", interviewDate(c) ? dayLabel(interviewDate(c)!) : "", c.shift ?? "", STATUS_LABEL[c.status], c.interview_note ?? "",
+      c.facebook_url ?? "", c.department ?? "", specializationLabel(c.specialization) ?? "", interviewDate(c) ? dayLabel(interviewDate(c)!) : "", c.shift ?? "", STATUS_LABEL[getApplicationStatus(c)], c.interview_note ?? "",
       ...crit.map((k) => (e?.scores?.[k.id] != null ? Number(e.scores[k.id]) : "")),
       e?.average_score != null ? Number(e.average_score) : "",
       e?.comment ?? "",
@@ -247,9 +250,10 @@ export function exportResults(
   for (const c of candidates) {
     const k = c.department || "(Chưa rõ ban)";
     const s = byDept.get(k) ?? { total: 0, done: 0, absent: 0, sum: 0, n: 0, dur: 0, dn: 0 };
+    const status = getApplicationStatus(c);
     s.total++;
-    if (c.status === "COMPLETED") s.done++;
-    if (c.status === "ABSENT") s.absent++;
+    if (status === "COMPLETED") s.done++;
+    if (status === "ABSENT") s.absent++;
     const e = evalBy.get(c.id);
     if (e?.average_score != null) { s.sum += Number(e.average_score); s.n++; }
     if (e?.duration_seconds != null) { s.dur += e.duration_seconds; s.dn++; }

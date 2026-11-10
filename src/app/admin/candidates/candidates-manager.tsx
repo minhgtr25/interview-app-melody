@@ -29,6 +29,7 @@ import { GENDERS } from "@/lib/personal-info";
 import { groupCandidateApplications } from "@/components/candidate-applications";
 import { SPECIALIZATIONS_BY_DEPARTMENT, isSpecializedDepartment, specializationLabel, type SpecializationCode } from "@/lib/specializations";
 import { dayLabel, interviewDate, interviewDays, makeInterviewShift, parseInterviewShift } from "@/lib/interview-days";
+import { createCandidateApplicationStatusResolver } from "@/lib/candidate-application-status";
 
 const SELECT_CLS = "h-9 rounded-lg border border-input bg-background px-3 text-sm";
 const EMPTY: CandidateInput = { code: "", full_name: "", student_number: "", student_cohort: "", gender: "", facebook_url: "", phone: "", email: "", department: "", specialization: "", shift: "", cv_url: "" };
@@ -65,6 +66,10 @@ export function CandidatesManager({
   const [busy, setBusy] = useState(false);
 
   const evalBy = useMemo(() => new Map(evals.rows.map((e) => [e.candidate_id, e])), [evals.rows]);
+  const getApplicationStatus = useMemo(
+    () => createCandidateApplicationStatusResolver(cand.rows, evals.rows),
+    [cand.rows, evals.rows],
+  );
   const groupByCandidate = useMemo(() => {
     const map = new Map<string, ReturnType<typeof groupCandidateApplications>[number]>();
     for (const group of groupCandidateApplications(cand.rows)) {
@@ -107,10 +112,10 @@ export function CandidatesManager({
   const filtered = useMemo(() => {
     const nq = normalizeText(q);
     return cand.rows
-      .filter((c) => (!statusF || c.status === statusF) && (!deptF || c.department === deptF) && (!sourceF || c.added_by_role === sourceF) && (!dayF || interviewDate(c) === dayF))
+      .filter((c) => (!statusF || getApplicationStatus(c) === statusF) && (!deptF || c.department === deptF) && (!sourceF || c.added_by_role === sourceF) && (!dayF || interviewDate(c) === dayF))
       .filter((c) => !nq || normalizeText(`${c.code} ${c.student_number ?? ""} ${c.student_number_raw ?? ""} ${c.full_name} ${c.phone ?? ""} ${c.email ?? ""}`).includes(nq))
       .sort((a, b) => a.code.localeCompare(b.code, "vi", { numeric: true }));
-  }, [cand.rows, q, statusF, deptF, sourceF, dayF]);
+  }, [cand.rows, evals.rows, q, statusF, deptF, sourceF, dayF, getApplicationStatus]);
 
   async function loadCriteria() {
     const { data } = await createClient().from("rubric_criteria").select("*").order("sort_order");
@@ -195,7 +200,7 @@ export function CandidatesManager({
 
   const renderStatus = (c: Candidate) => (
     <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-      <StatusBadge status={c.status} />
+      <StatusBadge status={getApplicationStatus(c)} />
       {c.challenge_status && <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-semibold text-violet-800 dark:bg-violet-950 dark:text-violet-200">
         {c.challenge_status === "WAITING" ? "Chờ thử thách" : c.challenge_status === "ASSIGNED" ? "Đã nhận thử thách" : c.challenge_status === "INTERVIEWING" ? "Đang thử thách" : "Đã xong thử thách"}
       </span>}
