@@ -9,7 +9,7 @@ const ADMIN = "00000000-0000-0000-0000-0000000000da";
 const INTERVIEWER = "00000000-0000-0000-0000-0000000000db";
 
 describe("Debate pairs", () => {
-  it("requires two Debate judges, processes two candidates per batch, and retains later candidates in the queue", async () => {
+  it("processes one or two candidates per Debate batch and retains later candidates in the queue", async () => {
     const db = new PGlite();
     try {
       await db.exec(`
@@ -30,6 +30,9 @@ describe("Debate pairs", () => {
       const textReviewMigration = readFileSync(new URL("../supabase/migrations/20261205_debate_text_reviews.sql", import.meta.url), "utf8");
       await db.exec(textReviewMigration);
       await db.exec(textReviewMigration);
+      const singleCandidateMigration = readFileSync(new URL("../supabase/migrations/20261207_single_candidate_debate.sql", import.meta.url), "utf8");
+      await db.exec(singleCandidateMigration);
+      await db.exec(singleCandidateMigration);
       await db.exec("grant select on all tables in schema public to authenticated");
       await db.exec(`update public.interview_day_state
         set day=(clock_timestamp() at time zone 'Asia/Ho_Chi_Minh')::date where id='main'`);
@@ -102,7 +105,7 @@ describe("Debate pairs", () => {
       await asUser(JUDGE2, `select public.start_debate_pair($1)`, [desks[1].id]);
       await asUser(JUDGE2, `select public.confirm_debate_comment($1,$2,'Solo first')`, [desks[1].id, candidates[4].id]);
       await expect(asUser(JUDGE2, `select public.finalize_debate_pair($1,$2)`, [desks[1].id, null]))
-        .rejects.toThrow(/Cả hai thí sinh/);
+        .rejects.toThrow(/Mỗi thí sinh/);
       await asUser(JUDGE2, `select public.confirm_debate_comment($1,$2,'Solo second')`, [desks[1].id, candidates[5].id]);
       await asUser(JUDGE2, `select public.finalize_debate_pair($1,$2)`, [desks[1].id, null]);
       const soloEvaluations = (await db.query<{ challenge_average_score: number | null; challenge_comment: string }>(`
@@ -125,7 +128,7 @@ describe("Debate pairs", () => {
       await expect(asUser(JUDGE3, `select public.confirm_debate_comment($1,$2,'Wrong slot')`,
         [desks[0].id, candidates[0].id])).rejects.toThrow(/vị trí/);
       await expect(asUser(JUDGE, `select public.finalize_debate_pair($1,$2)`,
-        [desks[0].id, null])).rejects.toThrow(/Cả hai thí sinh/);
+        [desks[0].id, null])).rejects.toThrow(/Mỗi thí sinh/);
       await asUser(JUDGE3, `select public.confirm_debate_comment($1,$2,'Secondary')`, [desks[0].id, candidates[1].id]);
       await asUser(ADMIN, `select public.admin_confirm_debate_comment($1,$2,$3,'Secondary via Admin')`,
         [desks[0].id, candidates[1].id, JUDGE3]);
@@ -177,6 +180,43 @@ describe("Debate pairs", () => {
       `, [desks[0].id])).rows;
       expect(rows.every((row) => row.challenge_status === "COMPLETED")).toBe(true);
 
+      const [single, waiting] = (await db.query<{ id: string }>(`
+        insert into public.candidates(code,full_name,department,status,challenge_status,
+          challenge_table_id,debate_request_status,challenge_started_at)
+        values('DB-SINGLE','Single candidate','HCTC','CHECKED_IN','WAITING',$1,'PENDING',now()),
+              ('DB-LATER','Later candidate','HCTC','CHECKED_IN','WAITING',$1,'PENDING',now())
+        returning id
+      `, [desks[0].id])).rows;
+      await db.query("insert into public.evaluations(candidate_id,comment) values($1,'Round one')", [single.id]);
+      await act(JUDGE, single.id, desks[0].id, "ACCEPT");
+      await expect(asUser(JUDGE3, `select public.start_debate_pair($1)`, [desks[0].id]))
+        .rejects.toThrow(/Giám khảo Debate 1/);
+      await asUser(JUDGE, `select public.start_debate_pair($1)`, [desks[0].id]);
+      expect((await asUser(JUDGE3, `select comment from public.evaluations where candidate_id=$1`,
+        [single.id])).rows).toMatchObject([{ comment: "Round one" }]);
+      await expect(act(JUDGE, waiting.id, desks[0].id, "ACCEPT"))
+        .rejects.toThrow(/đang diễn ra/);
+      await expect(asUser(JUDGE3, `select public.confirm_debate_comment($1,$2,'Observer')`,
+        [desks[0].id, single.id])).rejects.toThrow(/chỉ được xem phiếu/);
+      await expect(asUser(ADMIN, `select public.admin_confirm_debate_comment($1,$2,$3,'Observer')`,
+        [desks[0].id, single.id, JUDGE3])).rejects.toThrow(/chỉ được xem phiếu/);
+      await asUser(JUDGE, `select public.confirm_debate_comment($1,$2,'Primary solo')`,
+        [desks[0].id, single.id]);
+      expect((await asUser(JUDGE3, `select comment from public.debate_judge_reviews where candidate_id=$1`,
+        [single.id])).rows).toMatchObject([{ comment: "Primary solo" }]);
+      await expect(asUser(JUDGE3, `select public.finalize_debate_pair($1,$2)`,
+        [desks[0].id, null])).rejects.toThrow(/Giám khảo Debate 1/);
+      await asUser(JUDGE, `select public.finalize_debate_pair($1,$2)`, [desks[0].id, null]);
+      const oneCandidateResult = (await db.query<{ status: string; challenge_status: string; challenge_comment: string }>(`
+        select c.status::text,c.challenge_status,e.challenge_comment
+        from public.candidates c join public.evaluations e on e.candidate_id=c.id where c.id=$1
+      `, [single.id])).rows[0];
+      expect(oneCandidateResult).toEqual({ status: "COMPLETED", challenge_status: "COMPLETED", challenge_comment: "Primary solo" });
+      expect((await db.query<{ status: string }>("select status::text from public.tables where id=$1", [desks[0].id])).rows[0].status)
+        .toBe("AVAILABLE");
+      expect((await db.query<{ challenge_status: string }>("select challenge_status from public.candidates where id=$1", [waiting.id])).rows[0].challenge_status)
+        .toBe("WAITING");
+
       const [{ id: regularRoomId }] = (await db.query<{ id: string }>(`
         insert into public.rooms(name,building_code,room_number)
         values('DE-319','DE','319') returning id
@@ -216,7 +256,7 @@ describe("Debate pairs", () => {
       const accepted = (await db.query<{ debate_slot_number: number; debate_batch_number: number }>(`
         select debate_slot_number,debate_batch_number from public.candidates where id=$1
       `, [nextCandidateId])).rows[0];
-      expect(accepted).toMatchObject({ debate_slot_number: 1, debate_batch_number: 3 });
+      expect(accepted).toMatchObject({ debate_slot_number: 1, debate_batch_number: 4 });
     } finally {
       await db.close();
     }
