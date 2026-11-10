@@ -16,6 +16,8 @@ export interface Profile {
   full_name: string;
   role: UserRole;
   table_id: string | null;
+  is_debate_judge: boolean;
+  debate_judge_position: 1 | 2 | null;
   created_at: string;
 }
 
@@ -92,6 +94,10 @@ export interface Candidate {
   checked_in_at: string | null;
   table_id: string | null;
   challenge_table_id: string | null;
+  debate_batch_number: number | null;
+  debate_request_status: "PENDING" | "WAITING" | "SLOT" | null;
+  debate_requested_from_table_id: string | null;
+  debate_slot_number: 1 | 2 | null;
   challenge_status: "WAITING" | "ASSIGNED" | "INTERVIEWING" | "COMPLETED" | null;
   challenge_started_at: string | null;
   assigned_at: string | null;
@@ -176,6 +182,18 @@ export interface Evaluation {
   challenge_ended_at: string | null;
   challenge_duration_seconds: number | null;
   created_at: string;
+}
+
+export interface DebateJudgeReview {
+  id: string;
+  candidate_id: string;
+  table_id: string;
+  judge_id: string;
+  judge_position: 1 | 2;
+  scores: Record<string, number>;
+  comment: string;
+  confirmed_at: string;
+  updated_at: string;
 }
 
 export type ReviewDecisionValue = "PASS" | "FAIL" | "CONSIDER";

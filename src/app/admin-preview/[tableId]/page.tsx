@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { fetchAll } from "@/lib/fetch-all";
-import type { Candidate, Evaluation, InterviewTable, Room, RubricCriterion } from "@/lib/types";
+import type { Candidate, DebateJudgeReview, Evaluation, InterviewTable, Room, RubricCriterion } from "@/lib/types";
 import { ClockProvider } from "@/components/clock";
 import { InterviewerBoard } from "@/app/interviewer/interviewer-board";
 
@@ -13,12 +13,14 @@ export default async function AdminDeskPreviewPage({ params }: { params: Promise
   const { tableId } = await params;
   const supabase = await createClient();
   await supabase.rpc("ensure_interview_day");
-  const [tables, candidates, rooms, rubric, evaluations, dayState] = await Promise.all([
+  const [tables, candidates, rooms, rubric, evaluations, debateReviews, judgeCount, dayState] = await Promise.all([
     fetchAll<InterviewTable>(supabase, "tables", "sort_order"),
     fetchAll<Candidate>(supabase, "candidates"),
     fetchAll<Room>(supabase, "rooms", "sort_order"),
     fetchAll<RubricCriterion>(supabase, "rubric_criteria", "sort_order"),
     fetchAll<Evaluation>(supabase, "evaluations"),
+    fetchAll<DebateJudgeReview>(supabase, "debate_judge_reviews", "updated_at"),
+    supabase.rpc("debate_judge_count", { p_table_id: tableId }),
     supabase.from("interview_day_state").select("day").eq("id", "main").maybeSingle(),
   ]);
   if (!tables.some((table) => table.id === tableId)) notFound();
@@ -29,6 +31,9 @@ export default async function AdminDeskPreviewPage({ params }: { params: Promise
       initialTables={tables}
       initialCandidates={candidates}
       initialEvaluations={evaluations}
+      initialDebateReviews={debateReviews}
+      debateJudgePosition={null}
+      debateJudgeCount={Number(judgeCount.data ?? 1)}
       rooms={rooms}
       rubric={rubric.filter((criterion) => criterion.active)}
       interviewerName={`Admin preview · ${profile.full_name || profile.email}`}

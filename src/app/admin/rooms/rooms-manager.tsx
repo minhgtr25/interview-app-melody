@@ -23,7 +23,7 @@ import { SPECIALIZATIONS_BY_DEPARTMENT, isSpecializedDepartment, isSpecializatio
 import { dayLabel, todayInVietnam } from "@/lib/interview-days";
 import { useServerNow } from "@/components/clock";
 
-type TableSetup = { department: DepartmentCode | ""; specialization: SpecializationCode | ""; createAccount: boolean; judgeId: string };
+type TableSetup = { department: DepartmentCode | ""; specialization: SpecializationCode | ""; createAccount: boolean; judgeId: string; secondJudgeId: string };
 type RoomForm = {
   building: BuildingCode | "";
   number: string;
@@ -33,7 +33,7 @@ type RoomForm = {
   tables: TableSetup[];
 };
 
-const emptyTable = (): TableSetup => ({ department: "", specialization: "", createAccount: true, judgeId: "" });
+const emptyTable = (): TableSetup => ({ department: "", specialization: "", createAccount: true, judgeId: "", secondJudgeId: "" });
 const emptyForm = (): RoomForm => ({ building: "", number: "", count: 2, isChallenge: false, externalChallenge: false, tables: [emptyTable(), emptyTable(), emptyTable(), emptyTable()] });
 
 function RoomFields({ form, setForm, judges, disabled, prefix, occupiedExistingDeskCount }: {
@@ -79,6 +79,7 @@ function RoomFields({ form, setForm, judges, disabled, prefix, occupiedExistingD
         <div className="flex gap-3">
           {([1, 2, 3, 4] as const).map((count) => <label key={count} className="flex items-center gap-1.5 text-sm">
             <input type="radio" name={`${prefix}-count`} checked={form.count === count}
+              disabled={form.isChallenge && count !== 2}
               onChange={() => setForm({ ...form, count,
                 isChallenge: form.isChallenge && form.tables.slice(0, count).every((table) => table.department === "HCTC"),
                 externalChallenge: form.externalChallenge && form.tables.slice(0, count).every((table) => table.department === "VH"),
@@ -95,9 +96,10 @@ function RoomFields({ form, setForm, judges, disabled, prefix, occupiedExistingD
     </label>}
     {canConfigureChallenge && <label className="flex items-start gap-2 rounded-lg border border-violet-300 bg-violet-50 p-3 text-sm dark:border-violet-900 dark:bg-violet-950/30">
       <input type="checkbox" checked={form.isChallenge} disabled={disabled}
-        onChange={(event) => setForm({ ...form, isChallenge: event.target.checked, externalChallenge: false })} />
+        onChange={(event) => setForm({ ...form, isChallenge: event.target.checked, externalChallenge: false, count: event.target.checked ? 2 : form.count,
+          tables: form.tables.map((table) => ({ ...table, createAccount: !event.target.checked, judgeId: "", secondJudgeId: "" })) })} />
       <span><span className="block font-semibold">HCTC · Phòng Debate cho vòng thử thách</span>
-        <span className="text-muted-foreground">Tạo tài khoản riêng cho Giám khảo Debate. Điều phối chỉ theo dõi; Giám khảo Debate nhận và chốt thí sinh.</span></span>
+        <span className="text-muted-foreground">Cấp tài khoản riêng ở mục Tài khoản trước. Mỗi bàn cần Giám khảo 1 và có thể thêm Giám khảo 2.</span></span>
     </label>}
     {form.building && isRoomNumber(form.number) && <p className="text-sm font-semibold">Mã phòng: {roomCode(form.building, form.number)}</p>}
     <h4 className="text-sm font-semibold">4. Cấu hình từng bàn</h4>
@@ -113,16 +115,25 @@ function RoomFields({ form, setForm, judges, disabled, prefix, occupiedExistingD
             {(table.department === "CM" ? SPECIALIZATIONS_BY_DEPARTMENT.CM : SPECIALIZATIONS_BY_DEPARTMENT.TT).map((item) => <option key={item.code} value={item.code}>{item.name}</option>)}
           </select>
         </label>}
-        <label className="flex items-center gap-2 text-sm">
+        {!form.isChallenge && <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={table.createAccount} disabled={disabled}
             onChange={(event) => changeTable(index, { createAccount: event.target.checked, judgeId: "" })} />
-          {form.isChallenge ? "Tạo tài khoản Giám khảo Debate cho bàn" : "Tạo tài khoản đại diện cho bàn"}
-        </label>
-        {!table.createAccount && <label className="grid gap-1 text-sm">Tài khoản đại diện có sẵn
+           Tạo tài khoản đại diện cho bàn
+        </label>}
+        {(form.isChallenge || !table.createAccount) && <label className="grid gap-1 text-sm">{form.isChallenge ? "Giám khảo Debate 1 · chính" : "Tài khoản đại diện có sẵn"}
           <select aria-label={`Tài khoản đại diện Bàn ${index + 1}`} className="h-9 rounded-lg border border-input bg-background px-2"
-            value={table.judgeId} disabled={disabled} onChange={(event) => changeTable(index, { judgeId: event.target.value })}>
+             value={table.judgeId} disabled={disabled} onChange={(event) => changeTable(index, { judgeId: event.target.value, secondJudgeId: event.target.value === table.secondJudgeId ? "" : table.secondJudgeId })}>
             <option value="">Chọn tài khoản</option>
             {judges.filter((judge) => occupiedExistingDeskCount === undefined || index < occupiedExistingDeskCount || !judge.table_id)
+              .map((judge) => <option key={judge.id} value={judge.id}>{judge.full_name || judge.email}</option>)}
+          </select>
+        </label>}
+        {form.isChallenge && <label className="grid gap-1 text-sm">Giám khảo Debate 2 · phụ (tuỳ chọn)
+          <select aria-label={`Giám khảo Debate 2 Bàn ${index + 1}`} className="h-9 rounded-lg border border-input bg-background px-2"
+            value={table.secondJudgeId} disabled={disabled} onChange={(event) => changeTable(index, { secondJudgeId: event.target.value })}>
+            <option value="">Chỉ dùng 1 tài khoản tại bàn</option>
+            {judges.filter((judge) => judge.id !== table.judgeId &&
+              (occupiedExistingDeskCount === undefined || index < occupiedExistingDeskCount || !judge.table_id))
               .map((judge) => <option key={judge.id} value={judge.id}>{judge.full_name || judge.email}</option>)}
           </select>
         </label>}
@@ -150,15 +161,16 @@ function ExistingRoom({ room, tables, profiles, busy, onSave, onDelete }: {
     tables: [0, 1, 2, 3].map((index) => ({
       department: sorted[index]?.department ?? "",
       specialization: sorted[index]?.specialization ?? "",
-      createAccount: !profiles.some((profile) => profile.role === "INTERVIEWER" && profile.table_id === sorted[index]?.id),
-      judgeId: profiles.find((profile) => profile.role === "INTERVIEWER" && profile.table_id === sorted[index]?.id)?.id ?? "",
+      createAccount: !room.is_challenge && !profiles.some((profile) => profile.role === "INTERVIEWER" && profile.table_id === sorted[index]?.id),
+       judgeId: profiles.find((profile) => profile.role === "INTERVIEWER" && profile.table_id === sorted[index]?.id && (!room.is_challenge || profile.debate_judge_position === 1))?.id ?? "",
+       secondJudgeId: profiles.find((profile) => profile.role === "INTERVIEWER" && profile.table_id === sorted[index]?.id && profile.debate_judge_position === 2)?.id ?? "",
     })),
   });
   const [form, setForm] = useState<RoomForm>(currentForm);
   const openEditor = () => { setForm(currentForm()); setEditing(true); };
   const hasOccupiedTables = tables.some((table) => table.status !== "AVAILABLE");
   const roomTableIds = new Set(tables.map((table) => table.id));
-  const availableJudges = profiles.filter((profile) => profile.role === "INTERVIEWER" &&
+  const availableJudges = profiles.filter((profile) => profile.role === "INTERVIEWER" && profile.is_debate_judge === room.is_challenge &&
     (!profile.table_id || roomTableIds.has(profile.table_id)));
   return <article className="space-y-4 rounded-xl border bg-card p-4">
     <div className="flex items-center justify-between gap-2">
@@ -173,7 +185,9 @@ function ExistingRoom({ room, tables, profiles, busy, onSave, onDelete }: {
       <ul className="space-y-1 text-sm">
         {sorted.map((table) => <li key={table.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2">
           <span>{table.name} ({table.department ?? "Chưa chọn Ban"}{table.specialization ? ` · ${specializationLabel(table.specialization)}` : ""})</span>
-          <span className="text-muted-foreground">{profiles.find((profile) => profile.role === "INTERVIEWER" && profile.table_id === table.id)?.full_name || "Chưa có tài khoản đại diện"}</span>
+           <span className="text-muted-foreground">{profiles.filter((profile) => profile.role === "INTERVIEWER" && profile.table_id === table.id)
+             .sort((a, b) => (a.debate_judge_position ?? 0) - (b.debate_judge_position ?? 0))
+             .map((profile) => `${room.is_challenge ? `GK ${profile.debate_judge_position} · ` : ""}${profile.full_name || profile.email}`).join("; ") || "Chưa có tài khoản đại diện"}</span>
           <div className="flex items-center gap-2">
             <Link href={`/admin-preview/${table.id}`} className="inline-flex h-8 items-center rounded-md border border-input bg-background px-2.5 text-xs font-medium hover:bg-muted">
               Mở bàn
@@ -212,15 +226,13 @@ export function RoomsManager({ rooms, tables, profiles, activeDay }: { rooms: Ro
   const [roomDepartment, setRoomDepartment] = useState<DepartmentCode | "">("");
   const supabase = createClient();
   const judges = profiles.filter((profile) => profile.role === "INTERVIEWER");
-  const unassignedJudges = judges.filter((judge) => !judge.table_id);
   const dayReady = activeDay === todayInVietnam(now);
   const filteredRooms = useMemo(() => rooms.filter((room) => {
     const roomTables = tables.filter((table) => table.room_id === room.id);
     if (roomDepartment && !roomTables.some((table) => table.department === roomDepartment)) return false;
-    const judgeNames = roomTables.map((table) => {
-      const judge = profiles.find((profile) => profile.role === "INTERVIEWER" && profile.table_id === table.id);
-      return `${judge?.full_name ?? ""} ${judge?.email ?? ""}`;
-    }).join(" ");
+     const judgeNames = roomTables.flatMap((table) => profiles.filter((profile) =>
+       profile.role === "INTERVIEWER" && profile.table_id === table.id)
+       .map((judge) => `${judge.full_name} ${judge.email}`)).join(" ");
     const tableText = roomTables.map((table) => `${table.name} ${table.department ?? ""} ${table.specialization ? specializationLabel(table.specialization) : ""}`).join(" ");
     return !roomQuery || normalizeText(`${room.name} ${room.building_code ?? ""} ${tableText} ${judgeNames}`).includes(normalizeText(roomQuery));
   }), [rooms, tables, profiles, roomQuery, roomDepartment]);
@@ -238,9 +250,13 @@ export function RoomsManager({ rooms, tables, profiles, activeDay }: { rooms: Ro
       return toast.error("Chọn ngạch phù hợp cho từng bàn thuộc Chuyên Môn hoặc Truyền Thông");
     if (form.isChallenge && selected.some((table) => table.department !== "HCTC"))
       return toast.error("Phòng Debate chỉ dùng riêng cho Ban HCTC");
+    if (form.isChallenge && form.count !== 2) return toast.error("Phòng Debate phải có đúng 2 bàn");
+    if (form.isChallenge && selected.some((table) => table.createAccount || !table.judgeId))
+      return toast.error("Cấp tài khoản Giám khảo Debate 1 cho mỗi bàn trước khi tạo phòng");
     if (form.externalChallenge && selected.some((table) => table.department !== "VH"))
       return toast.error("Chế độ thử thách ngoài phòng chỉ dùng cho Ban Văn hoá");
-    const existingIds = selected.filter((table) => !table.createAccount).map((table) => table.judgeId);
+    const existingIds = selected.filter((table) => !table.createAccount)
+      .flatMap((table) => [table.judgeId, ...(form.isChallenge && table.secondJudgeId ? [table.secondJudgeId] : [])]);
     if (new Set(existingIds).size !== existingIds.length)
       return toast.error("Một tài khoản đại diện chỉ được gán cho một bàn");
     const currentTables = existing ? tables.filter((table) => table.room_id === existing.id)
@@ -250,8 +266,11 @@ export function RoomsManager({ rooms, tables, profiles, activeDay }: { rooms: Ro
     if (addOnlyWhileOccupied) {
       const existingDeskChanged = currentTables.some((table, index) => {
         const setup = selected[index];
-        const judge = profiles.find((profile) => profile.role === "INTERVIEWER" && profile.table_id === table.id);
-        return !setup || setup.department !== table.department || setup.specialization !== table.specialization || setup.createAccount || setup.judgeId !== judge?.id;
+        const primary = profiles.find((profile) => profile.role === "INTERVIEWER" && profile.table_id === table.id &&
+          (!existing?.is_challenge || profile.debate_judge_position === 1));
+        const secondary = profiles.find((profile) => profile.role === "INTERVIEWER" && profile.table_id === table.id && profile.debate_judge_position === 2);
+        return !setup || setup.department !== table.department || setup.specialization !== table.specialization || setup.createAccount ||
+          setup.judgeId !== primary?.id || (form.isChallenge && setup.secondJudgeId !== (secondary?.id ?? ""));
       });
       if (!existing || selected.length <= currentTables.length ||
         form.building !== existing.building_code || form.number !== existing.room_number ||
@@ -260,8 +279,9 @@ export function RoomsManager({ rooms, tables, profiles, activeDay }: { rooms: Ro
       }
     }
     const currentIds = new Set(currentTables.map((table) => table.id));
-    if (selected.some((table) => !table.createAccount && !judges.some((judge) => judge.id === table.judgeId &&
-      (!judge.table_id || currentIds.has(judge.table_id)))))
+    if (selected.some((table) => !table.createAccount && [table.judgeId, ...(form.isChallenge && table.secondJudgeId ? [table.secondJudgeId] : [])]
+      .some((id) => !judges.some((judge) => judge.id === id && judge.is_debate_judge === form.isChallenge &&
+        (!judge.table_id || currentIds.has(judge.table_id))))))
       return toast.error("Tài khoản đại diện đã được gán ở phòng khác");
 
     setBusy(true);
@@ -317,8 +337,12 @@ export function RoomsManager({ rooms, tables, profiles, activeDay }: { rooms: Ro
         if (error) throw error;
       }
       const existingAssignments = selected.slice(firstDeskToProcess, form.count)
-        .map((table, index) => ({ tableId: resultIds[firstDeskToProcess + index], profileId: table.judgeId }))
-        .filter((item) => !!item.profileId);
+        .flatMap((table, index) => [
+          { tableId: resultIds[firstDeskToProcess + index], profileId: table.judgeId, position: form.isChallenge ? 1 as const : undefined },
+          ...(form.isChallenge && table.secondJudgeId
+            ? [{ tableId: resultIds[firstDeskToProcess + index], profileId: table.secondJudgeId, position: 2 as const }]
+            : []),
+        ]).filter((item) => !!item.profileId);
       const accountResult = await assignRoomTableAccounts(roomId, existingAssignments, !addOnlyWhileOccupied);
       if (!accountResult.ok) throw new Error(accountResult.error);
       for (let index = firstDeskToProcess; index < form.count; index++) {
@@ -371,7 +395,7 @@ export function RoomsManager({ rooms, tables, profiles, activeDay }: { rooms: Ro
 
     <section className="space-y-4 rounded-xl border bg-card p-4">
       <h3 className="font-semibold">Thêm phòng mới</h3>
-      <RoomFields form={newForm} setForm={setNewForm} judges={unassignedJudges} disabled={busy || !dayReady} prefix="new-room" />
+      <RoomFields form={newForm} setForm={setNewForm} judges={judges.filter((judge) => !judge.table_id && judge.is_debate_judge === newForm.isChallenge)} disabled={busy || !dayReady} prefix="new-room" />
       <Button onClick={() => void saveRoom(null, newForm)} disabled={busy || !dayReady}>
         {busy ? <Loader2 className="animate-spin" /> : <Plus />} Thêm phòng và kích hoạt
       </Button>

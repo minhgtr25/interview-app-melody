@@ -35,7 +35,7 @@ function tableAccountEmail(roomName: string, tableName: string) {
   return `${localPart}@club.local`;
 }
 
-type Form = { id: string | null; email: string; password: string; fullName: string; role: UserRole; tableId: string };
+type Form = { id: string | null; email: string; password: string; fullName: string; role: UserRole; tableId: string; isDebateJudge: boolean };
 
 export function AccountsManager({
   profiles,
@@ -90,12 +90,12 @@ export function AccountsManager({
 
   async function save() {
     if (!form) return;
-    if (!form.id && form.role === "INTERVIEWER" && !form.tableId) return toast.error("Chọn bàn để tạo tài khoản Giám khảo");
+    if (!form.id && form.role === "INTERVIEWER" && !form.isDebateJudge && !form.tableId) return toast.error("Chọn bàn để tạo tài khoản Giám khảo");
     if (!form.id && form.role === "INTERVIEWER" && form.password.length !== 8) return toast.error("Mật khẩu Giám khảo phải đúng 8 ký tự");
     setBusy(true);
     const res = form.id
-      ? await updateAccount({ id: form.id, fullName: form.fullName, role: form.role, tableId: form.tableId || null })
-      : await createAccount({ email: form.email, password: form.password, fullName: form.fullName, role: form.role, tableId: form.tableId || null });
+      ? await updateAccount({ id: form.id, fullName: form.fullName, role: form.role, tableId: form.tableId || null, isDebateJudge: form.isDebateJudge })
+      : await createAccount({ email: form.email, password: form.password, fullName: form.fullName, role: form.role, tableId: form.tableId || null, isDebateJudge: form.isDebateJudge });
     setBusy(false);
     if (!res.ok) return toast.error(res.error);
     if (!form.id) setCreated({ email: res.data?.email ?? form.email.trim().toLowerCase(), password: res.data?.password ?? form.password });
@@ -149,7 +149,7 @@ export function AccountsManager({
         </h2>
         <Button
           disabled={!serviceKeyConfigured}
-          onClick={() => setForm({ id: null, email: "", password: genPassword(8), fullName: "", role: "INTERVIEWER", tableId: "" })}
+          onClick={() => setForm({ id: null, email: "", password: genPassword(8), fullName: "", role: "INTERVIEWER", tableId: "", isDebateJudge: false })}
         >
           <Plus /> Cấp tài khoản
         </Button>
@@ -202,18 +202,18 @@ export function AccountsManager({
             {sorted.map((p) => (
               <TableRow key={p.id}>
                 <TableCell className="font-medium">
-                  {p.full_name || "—"}
+                  {p.full_name || "—"}{p.is_debate_judge && <Badge className="ml-2" variant="outline">Debate {p.debate_judge_position ?? "· chưa phân bàn"}</Badge>}
                   {p.id === currentUserId && <span className="ml-2 text-xs text-muted-foreground">(bạn)</span>}
                 </TableCell>
                 <TableCell className="font-mono text-xs">{p.email}</TableCell>
                 <TableCell><Badge variant="secondary">{ROLE_LABEL[p.role]}</Badge></TableCell>
                 <TableCell className="text-sm">
-                  {p.role === "INTERVIEWER" ? (p.table_id ? tableLabel.get(p.table_id) ?? "?" : <span className="text-red-600">Chưa phân bàn</span>) : ""}
+                  {p.role === "INTERVIEWER" ? (p.table_id ? `${tableLabel.get(p.table_id) ?? "?"}${p.is_debate_judge ? ` · Giám khảo ${p.debate_judge_position}` : ""}` : <span className="text-red-600">Chưa phân bàn</span>) : ""}
                 </TableCell>
                 <TableCell>
                   <div className="flex justify-end gap-0.5">
                     <Button size="icon-sm" variant="ghost" title="Sửa" aria-label="Sửa"
-                      onClick={() => setForm({ id: p.id, email: p.email, password: "", fullName: p.full_name, role: p.role, tableId: p.table_id ?? "" })}>
+                      onClick={() => setForm({ id: p.id, email: p.email, password: "", fullName: p.full_name, role: p.role, tableId: p.table_id ?? "", isDebateJudge: p.is_debate_judge })}>
                       <Pencil />
                     </Button>
                     <Button size="icon-sm" variant="ghost" title="Đặt lại mật khẩu" aria-label="Đặt lại mật khẩu"
@@ -250,7 +250,7 @@ export function AccountsManager({
               </div>
               <div className="grid gap-1.5">
                 <Label htmlFor="a-email">Email đăng nhập</Label>
-                <Input id="a-email" type="email" value={!form.id && form.role === "INTERVIEWER" ? tableEmail(form.tableId) : form.email} disabled={!!form.id || (!form.id && form.role === "INTERVIEWER")}
+                <Input id="a-email" type="email" value={!form.id && form.role === "INTERVIEWER" && !form.isDebateJudge ? tableEmail(form.tableId) : form.email} disabled={!!form.id || (!form.id && form.role === "INTERVIEWER" && !form.isDebateJudge)}
                   onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="giamkhao1@club.local" />
               </div>
               {!form.id && (
@@ -273,12 +273,14 @@ export function AccountsManager({
                   {ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
                 </select>
               </div>
-              {form.role === "INTERVIEWER" && (
+              {form.role === "INTERVIEWER" && <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.isDebateJudge} onChange={(e) => setForm({ ...form, isDebateJudge: e.target.checked, tableId: "", email: "" })} />Giám khảo Debate (cấp riêng, chọn làm Giám khảo 1 hoặc 2 khi tạo bàn)</label>}
+              {form.role === "INTERVIEWER" && !form.isDebateJudge && (
                 <div className="grid gap-1.5">
                   <Label htmlFor="a-table">Bàn dùng tài khoản này làm đại diện</Label>
                   <select id="a-table" className={SELECT_CLS} value={form.tableId} onChange={(e) => setForm({ ...form, tableId: e.target.value })}>
                     <option value="">— Chọn bàn —</option>
-                    {tableOptions.filter((t) => !judgesPerTable.get(t.id) || t.id === form.tableId).map((t) => (
+                    {tableOptions.filter((t) => !rooms.find((room) => room.id === t.room_id)?.is_challenge &&
+                      (!judgesPerTable.get(t.id) || t.id === form.tableId)).map((t) => (
                       <option key={t.id} value={t.id}>
                         {tableLabel.get(t.id)} {judgesPerTable.get(t.id) ? "(đang gán)" : ""}
                       </option>
@@ -293,7 +295,7 @@ export function AccountsManager({
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setForm(null)}>Huỷ</Button>
-            <Button onClick={save} disabled={busy || (!!form && !form.id && form.role === "INTERVIEWER" && (!form.tableId || form.password.length !== 8))}>{busy && <Loader2 className="animate-spin" />}{form?.id ? "Lưu" : "Tạo tài khoản"}</Button>
+            <Button onClick={save} disabled={busy || (!!form && !form.id && form.role === "INTERVIEWER" && ((!form.isDebateJudge && !form.tableId) || form.password.length !== 8))}>{busy && <Loader2 className="animate-spin" />}{form?.id ? "Lưu" : "Tạo tài khoản"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

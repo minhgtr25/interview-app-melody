@@ -88,12 +88,14 @@ export async function createTableAccount(tableId: string): Promise<ActionResult<
 /** Gán tài khoản đại diện qua service role vì RLS không cho client sửa profiles. */
 export async function assignRoomTableAccounts(
   roomId: string,
-  assignments: { tableId: string; profileId: string }[],
+  assignments: { tableId: string; profileId: string; position?: 1 | 2 }[],
   replaceExisting: boolean,
 ): Promise<ActionResult> {
   try {
     await assertAdmin();
     const admin = createServiceClient();
+    const { data: room, error: roomError } = await admin.from("rooms").select("is_challenge").eq("id", roomId).single();
+    if (roomError || !room) throw roomError ?? new Error("Không tìm thấy phòng");
     const { data: roomTables, error: tableError } = await admin.from("tables")
       .select("id").eq("room_id", roomId);
     if (tableError) throw tableError;
@@ -102,20 +104,22 @@ export async function assignRoomTableAccounts(
     const validTableIds = new Set(tableIds);
     const profileIds = assignments.map((item) => item.profileId);
     if (assignments.some((item) => !validTableIds.has(item.tableId)) ||
-      new Set(assignments.map((item) => item.tableId)).size !== assignments.length ||
+      assignments.some((item) => room.is_challenge ? ![1, 2].includes(item.position ?? 0) : !!item.position) ||
+      new Set(assignments.map((item) => `${item.tableId}:${room.is_challenge ? item.position : 1}`)).size !== assignments.length ||
       new Set(profileIds).size !== profileIds.length) {
       throw new Error("Danh sách tài khoản đại diện không hợp lệ");
     }
 
     const { data: current, error: currentError } = await admin.from("profiles")
-      .select("id,table_id").eq("role", "INTERVIEWER").in("table_id", tableIds);
+      .select("id,table_id,debate_judge_position").eq("role", "INTERVIEWER").in("table_id", tableIds);
     if (currentError) throw currentError;
     const { data: selected, error: selectedError } = profileIds.length
-      ? await admin.from("profiles").select("id,role,table_id").in("id", profileIds)
+      ? await admin.from("profiles").select("id,role,table_id,is_debate_judge").in("id", profileIds)
       : { data: [], error: null };
     if (selectedError) throw selectedError;
     if ((selected ?? []).length !== profileIds.length || (selected ?? []).some((profile) =>
-      profile.role !== "INTERVIEWER" || (profile.table_id && !validTableIds.has(profile.table_id)))) {
+      profile.role !== "INTERVIEWER" || profile.is_debate_judge !== room.is_challenge ||
+      (profile.table_id && !validTableIds.has(profile.table_id)))) {
       throw new Error("Tài khoản Giám khảo không hợp lệ hoặc đang thuộc phòng khác");
     }
     if (!replaceExisting && assignments.some((item) => {
@@ -124,25 +128,26 @@ export async function assignRoomTableAccounts(
     })) {
       throw new Error("Tài khoản này đang đại diện bàn khác; chọn tài khoản chưa gán bàn");
     }
-    if (!replaceExisting && assignments.some((item) => (current ?? []).some((profile) => profile.table_id === item.tableId && profile.id !== item.profileId))) {
+    if (!replaceExisting && assignments.some((item) => (current ?? []).some((profile) =>
+      profile.table_id === item.tableId && profile.debate_judge_position === (item.position ?? null) && profile.id !== item.profileId))) {
       throw new Error("Bàn đã có tài khoản đại diện");
     }
 
     try {
       if (replaceExisting && (current ?? []).length) {
-        const { error } = await admin.from("profiles").update({ table_id: null })
+        const { error } = await admin.from("profiles").update({ table_id: null, debate_judge_position: null })
           .eq("role", "INTERVIEWER").in("table_id", tableIds);
         if (error) throw error;
       }
       for (const item of assignments) {
-        const { error } = await admin.from("profiles").update({ table_id: item.tableId })
+        const { error } = await admin.from("profiles").update({ table_id: item.tableId, debate_judge_position: item.position ?? null })
           .eq("id", item.profileId).eq("role", "INTERVIEWER");
         if (error) throw error;
       }
     } catch (error) {
-      if (profileIds.length) await admin.from("profiles").update({ table_id: null }).in("id", profileIds);
+      if (profileIds.length) await admin.from("profiles").update({ table_id: null, debate_judge_position: null }).in("id", profileIds);
       if (replaceExisting) for (const profile of current ?? []) {
-        await admin.from("profiles").update({ table_id: profile.table_id }).eq("id", profile.id);
+        await admin.from("profiles").update({ table_id: profile.table_id, debate_judge_position: profile.debate_judge_position }).eq("id", profile.id);
       }
       throw error;
     }
@@ -163,25 +168,31 @@ export async function createAccount(input: {
   fullName: string;
   role: UserRole;
   tableId: string | null;
+  isDebateJudge?: boolean;
 }): Promise<ActionResult<{ email: string; password: string }>> {
   try {
     await assertAdmin();
     if (!ROLES.includes(input.role)) throw new Error("Vai trò không hợp lệ");
     validatePassword(input.password);
-    const tableId = input.role === "INTERVIEWER" ? input.tableId || null : null;
+    const isDebateJudge = input.role === "INTERVIEWER" && !!input.isDebateJudge;
+    const tableId = input.role === "INTERVIEWER" && !isDebateJudge ? input.tableId || null : null;
 
     const admin = createServiceClient();
     let email = input.email.trim().toLowerCase();
     if (input.role === "INTERVIEWER") {
-      if (!tableId) throw new Error("Chọn bàn để tạo tài khoản Giám khảo");
+      if (!tableId && !isDebateJudge) throw new Error("Chọn bàn để tạo tài khoản Giám khảo");
       if (input.password.length !== 8) throw new Error("Mật khẩu Giám khảo phải đúng 8 ký tự");
-      const { data: table, error: tableError } = await admin.from("tables").select("id,room_id,name").eq("id", tableId).single();
-      if (tableError || !table) throw tableError ?? new Error("Không tìm thấy bàn");
-      const { data: room, error: roomError } = await admin.from("rooms").select("name").eq("id", table.room_id).single();
-      if (roomError || !room) throw roomError ?? new Error("Không tìm thấy phòng");
-      const { data: assigned } = await admin.from("profiles").select("id").eq("role", "INTERVIEWER").eq("table_id", tableId).limit(1);
-      if (assigned?.length) throw new Error("Bàn này đã có tài khoản Giám khảo");
-      email = interviewerEmail(room.name, table.name);
+      if (isDebateJudge && !EMAIL_RE.test(email)) throw new Error("Email Giám khảo Debate không hợp lệ");
+      if (tableId) {
+        const { data: table, error: tableError } = await admin.from("tables").select("id,room_id,name").eq("id", tableId).single();
+        if (tableError || !table) throw tableError ?? new Error("Không tìm thấy bàn");
+        const { data: room, error: roomError } = await admin.from("rooms").select("name,is_challenge").eq("id", table.room_id).single();
+        if (roomError || !room) throw roomError ?? new Error("Không tìm thấy phòng");
+        if (room.is_challenge) throw new Error("Tài khoản Giám khảo Debate phải được Admin cấp riêng trước khi tạo phòng");
+        const { data: assigned } = await admin.from("profiles").select("id").eq("role", "INTERVIEWER").eq("table_id", tableId).limit(1);
+        if (assigned?.length) throw new Error("Bàn này đã có tài khoản Giám khảo");
+        email = interviewerEmail(room.name, table.name);
+      }
     } else if (!EMAIL_RE.test(email)) {
       throw new Error("Email không hợp lệ");
     }
@@ -202,6 +213,7 @@ export async function createAccount(input: {
       full_name: input.fullName.trim(),
       role: input.role,
       table_id: tableId,
+      is_debate_judge: isDebateJudge,
     });
     if (pErr) {
       await admin.auth.admin.deleteUser(data.user.id); // rollback
@@ -219,6 +231,7 @@ export async function updateAccount(input: {
   fullName: string;
   role: UserRole;
   tableId: string | null;
+  isDebateJudge?: boolean;
 }): Promise<ActionResult> {
   try {
     const me = await assertAdmin();
@@ -227,12 +240,18 @@ export async function updateAccount(input: {
       throw new Error("Không thể tự hạ quyền Admin của chính mình");
     }
     const admin = createServiceClient();
+    const { data: existing, error: existingError } = await admin.from("profiles")
+      .select("debate_judge_position").eq("id", input.id).single();
+    if (existingError) throw existingError;
     const { error } = await admin
       .from("profiles")
       .update({
         full_name: input.fullName.trim(),
         role: input.role,
         table_id: input.role === "INTERVIEWER" ? input.tableId || null : null,
+        is_debate_judge: input.role === "INTERVIEWER" && !!input.isDebateJudge,
+        debate_judge_position: input.role === "INTERVIEWER" && input.isDebateJudge && input.tableId
+          ? existing.debate_judge_position : null,
       })
       .eq("id", input.id);
     if (error) throw error;
