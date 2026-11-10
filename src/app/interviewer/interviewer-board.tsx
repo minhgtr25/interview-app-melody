@@ -173,6 +173,8 @@ export function InterviewerBoard({
     : anchorCandidate;
   const effectiveJudgeId = actingJudgeId ?? selfId;
   const candidateEvaluation = candidate ? evals.rows.find((evaluation) => evaluation.candidate_id === candidate.id) : undefined;
+  const continuingVhReview = candidate?.department === "VH" && !candidate.challenge_status &&
+    candidateEvaluation?.table_id === tableId && !!room?.external_challenge;
   const candidateDebateReviews = candidate ? debateReviews.rows.filter((review) => review.candidate_id === candidate.id && review.table_id === tableId) : [];
   const myDebateReview = candidateDebateReviews.find((review) => review.judge_id === effectiveJudgeId);
   const confirmedDebateComment = myDebateReview?.comment;
@@ -282,8 +284,11 @@ export function InterviewerBoard({
   const draftId = candId && room?.is_challenge ? `${candId}:${effectiveJudgeId}` : candId;
   useEffect(() => {
     const saved = draftId ? loadDraft(draftId) : { scores: {}, comment: "", secondDepartment: "" as const, secondSpecialization: "" as const, secondDate: "", secondTime: "" };
-    setDraft(confirmedDebateComment === undefined ? saved : { ...saved, comment: confirmedDebateComment });
-  }, [draftId, confirmedDebateComment]);
+    const previousReview = continuingVhReview && candidateEvaluation
+      ? { ...saved, scores: { ...candidateEvaluation.scores, ...saved.scores }, comment: saved.comment || candidateEvaluation.comment || "" }
+      : saved;
+    setDraft(confirmedDebateComment === undefined ? previousReview : { ...previousReview, comment: confirmedDebateComment });
+  }, [draftId, confirmedDebateComment, continuingVhReview, candidateEvaluation]);
 
   // Thông báo khi có thí sinh mới được gán
   const prevStatus = useRef(table?.status);
@@ -378,6 +383,15 @@ export function InterviewerBoard({
     const finishedAt = new Date().toISOString();
     cand.patchRow(candidateToFinish.id, { status: "COMPLETED", challenge_status: "COMPLETED", interview_ended_at: finishedAt });
     toast.success(`Đã xác nhận hoàn tất phỏng vấn ${candidateToFinish.full_name}`);
+  }
+
+  async function continueVhReview(candidateToContinue: Candidate) {
+    setBusy("start");
+    const { error } = await createClient().rpc("continue_vh_review", { p_candidate_id: candidateToContinue.id });
+    setBusy(null);
+    if (error) return toast.error(errorMessage(error));
+    await Promise.all([tbl.refetch(), cand.refetch(), evals.refetch()]);
+    toast.success(`Đã đưa ${candidateToContinue.full_name} về bàn để tiếp tục chấm`);
   }
 
   const canPauseDesk = !!room && !room.is_challenge && !room.external_challenge;
@@ -940,13 +954,16 @@ export function InterviewerBoard({
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0"><p className="break-words font-semibold">{item.full_name}</p><p className="text-xs text-muted-foreground">{evaluation.table_label} · {item.code}</p></div>
                 <span className="shrink-0 rounded-full bg-violet-100 px-2 py-1 text-xs font-medium text-violet-800 dark:bg-violet-950 dark:text-violet-200">
-                  {item.challenge_status === "COMPLETED" ? "Hoàn tất" : item.challenge_status === "INTERVIEWING" ? "Đang Debate" : item.challenge_status === "ASSIGNED" ? `Đã vào vị trí ${item.debate_slot_number ?? "?"}` : item.department === "HCTC" ? item.debate_request_status === "PENDING" ? `Chờ ${tbl.rows.find((desk) => desk.id === item.challenge_table_id)?.name ?? "bàn Debate"} phản hồi` : "Danh sách chờ Debate" : "Đang vòng 2"}
+                  {item.challenge_status === "COMPLETED" ? "Hoàn tất" : item.challenge_status === "INTERVIEWING" ? "Đang Debate" : item.challenge_status === "ASSIGNED" ? `Đã vào vị trí ${item.debate_slot_number ?? "?"}` : item.department === "HCTC" ? item.debate_request_status === "PENDING" ? `Chờ ${tbl.rows.find((desk) => desk.id === item.challenge_table_id)?.name ?? "bàn Debate"} phản hồi` : "Danh sách chờ Debate" : "Đang thử thách"}
                 </span>
               </div>
               {item.challenge_status !== "COMPLETED" && <p className="flex items-center gap-1 text-xs tabular-nums text-muted-foreground"><Timer className="size-3" />Từ lúc chuyển vòng 2: <Elapsed since={item.challenge_started_at} /></p>}
               <div className="flex flex-wrap gap-2">
                 {item.department === "HCTC" && <Button size="sm" variant="outline" onClick={() => openChat(item.id)}><MessageCircle /> Chat với Giám khảo Debate</Button>}
-                {item.department === "VH" && item.challenge_status !== "COMPLETED" && <Button size="sm" onClick={() => setFinishExternal(item)} disabled={busy !== null}><CheckCircle2 /> Xác nhận hoàn tất</Button>}
+                {item.department === "VH" && item.challenge_status === "WAITING" && <>
+                  <Button size="sm" onClick={() => setFinishExternal(item)} disabled={busy !== null}><CheckCircle2 /> Hoàn thành ca chấm</Button>
+                  <Button size="sm" variant="outline" onClick={() => void continueVhReview(item)} disabled={busy !== null || table?.status !== "AVAILABLE"} title={table?.status !== "AVAILABLE" ? "Bàn cần trống trước khi tiếp tục chấm" : undefined}><Undo2 /> Tiếp tục chấm</Button>
+                </>}
               </div>
             </li>)}
           </ul>
@@ -977,7 +994,7 @@ export function InterviewerBoard({
                disabled={busy !== null || missing.length > 0 || (!!room?.is_challenge && !draft.comment.trim())}
             >
               {busy === "submit" ? <Loader2 className="animate-spin" /> : <Send />}
-               {missing.length > 0 ? `Còn ${missing.length} tiêu chí chưa chấm` : room?.is_challenge ? myDebateReview ? "Cập nhật nhận xét của tôi" : "Xác nhận nhận xét của tôi" : "Nộp đánh giá & Kết thúc"}
+               {missing.length > 0 ? `Còn ${missing.length} tiêu chí chưa chấm` : room?.is_challenge ? myDebateReview ? "Cập nhật nhận xét của tôi" : "Xác nhận nhận xét của tôi" : candidate.department === "VH" && room?.external_challenge ? "Xong phỏng vấn · Sang thử thách" : "Nộp đánh giá & Kết thúc"}
             </Button>}
             {room?.is_challenge && canDirectDebate && <Button
               className="h-12 shrink-0 sm:h-14" disabled={busy !== null || !allDebateJudgesConfirmed || myDebateReviewNeedsUpdate}
@@ -992,13 +1009,15 @@ export function InterviewerBoard({
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-               {confirm === "submit" ? room?.is_challenge ? "Xác nhận nhận xét của bạn?" : "Nộp đánh giá và kết thúc?" : "Trả thí sinh về phòng chờ?"}
+               {confirm === "submit" ? room?.is_challenge ? "Xác nhận nhận xét của bạn?" : candidate?.department === "VH" && room?.external_challenge ? "Xong phỏng vấn và chuyển sang thử thách?" : "Nộp đánh giá và kết thúc?" : "Trả thí sinh về phòng chờ?"}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {confirm === "submit"
                  ? room?.is_challenge
                    ? `Lưu nhận xét riêng của bạn cho ${candidate?.full_name}. GK 1 chốt cả ca sau khi hai thí sinh đã được nhận xét.`
-                   : `Điểm TB ${avg == null ? "–" : avg.toFixed(2)}/10 cho ${candidate?.full_name}. Sau khi nộp, đồng hồ dừng và bàn được giải phóng. Không thể sửa lại từ màn hình này.`
+                   : candidate?.department === "VH" && room?.external_challenge
+                     ? `Lưu phiếu của ${candidate.full_name} và chuyển sang thử thách. Khi thử thách xong, bạn có thể hoàn thành ca chấm hoặc đưa thí sinh về bàn để chấm tiếp.`
+                     : `Điểm TB ${avg == null ? "–" : avg.toFixed(2)}/10 cho ${candidate?.full_name}. Sau khi nộp, đồng hồ dừng và bàn được giải phóng. Không thể sửa lại từ màn hình này.`
                 : `${candidate?.full_name ?? "Thí sinh"} sẽ quay về hàng chờ, điểm đang chấm dở sẽ bị xoá.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -1020,7 +1039,7 @@ export function InterviewerBoard({
               disabled={confirm === "submit" && candidate?.department === "HCTC" && !room?.is_challenge && !debateTableId}
               onClick={confirm === "submit" ? submit : returnToQueue}
             >
-               {confirm === "submit" ? room?.is_challenge ? "Xác nhận nhận xét" : "Nộp & Kết thúc" : "Trả về phòng chờ"}
+               {confirm === "submit" ? room?.is_challenge ? "Xác nhận nhận xét" : candidate?.department === "VH" && room?.external_challenge ? "Chuyển sang thử thách" : "Nộp & Kết thúc" : "Trả về phòng chờ"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
