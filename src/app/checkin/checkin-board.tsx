@@ -21,10 +21,11 @@ import { type DepartmentCode } from "@/lib/departments";
 import { GENDERS, type GenderCode, normalizeStudentNumber } from "@/lib/personal-info";
 import { groupCandidateApplications } from "@/components/candidate-applications";
 import { SPECIALIZATIONS_BY_DEPARTMENT, isSpecializedDepartment, specializationLabel, type SpecializationCode } from "@/lib/specializations";
-import { dayLabel, interviewDate, interviewDays, todayInVietnam } from "@/lib/interview-days";
+import { dayLabel, interviewDate, todayInVietnam } from "@/lib/interview-days";
 import { ScheduleRequestDialog } from "@/components/schedule-request-dialog";
 import { useServerNow } from "@/components/clock";
 import { useInterviewDayAutoSwitch } from "@/hooks/use-interview-day-auto-switch";
+import { candidateApplicationDay, candidateApplicationShift } from "@/lib/candidate-application-day";
 
 const NATIVE_SELECT =
   "h-10 rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50";
@@ -57,7 +58,7 @@ export function CheckinBoard({
   const [shift, setShift] = useState("");
   const today = todayInVietnam(serverNow);
   const previousDay = useRef(today);
-  const [day, setDay] = useState(() => interviewDays(initialCandidates).includes(today) ? today : "");
+  const [day, setDay] = useState(() => initialCandidates.some((candidate) => candidateApplicationDay(candidate) === today) ? today : "");
   const [dept, setDept] = useState<DepartmentCode | "">("");
   const [statusFilter, setStatusFilter] = useState<"" | CandidateStatus>("");
   const [absenceManager, setAbsenceManager] = useState(false);
@@ -81,9 +82,9 @@ export function CheckinBoard({
     previousDay.current = today;
   }, [today]);
 
-  const days = useMemo(() => interviewDays(rows), [rows]);
+  const days = useMemo(() => [...new Set(rows.map((row) => candidateApplicationDay(row)).filter((value): value is string => !!value))].sort(), [rows]);
   const shifts = useMemo(
-    () => [...new Set(rows.filter((row) => !day || interviewDate(row) === day).map((r) => r.shift).filter(Boolean) as string[])].sort(),
+    () => [...new Set(rows.filter((row) => !day || candidateApplicationDay(row) === day).map((row) => candidateApplicationShift(row)).filter(Boolean) as string[])].sort(),
     [rows, day]
   );
 
@@ -101,10 +102,10 @@ export function CheckinBoard({
     return rows
       .filter((c) => {
         if (absenceManager && c.status !== "ABSENT") return false;
-        const candidateDay = interviewDate(c);
+        const candidateDay = candidateApplicationDay(c);
         const earlyArrival = day === today && !!candidateDay && candidateDay > today && c.status === "NOT_ARRIVED";
         if (day && candidateDay !== day && (candidateDay || c.status === "COMPLETED") && !earlyArrival) return false;
-        if (shift && c.shift !== shift) return false;
+        if (shift && candidateApplicationShift(c) !== shift) return false;
         if (dept && c.department !== dept) return false;
         if (statusFilter && c.status !== statusFilter) return false;
         if (!q) return true;
@@ -125,7 +126,7 @@ export function CheckinBoard({
   }, [rows, deferredQuery, shift, dept, statusFilter, absenceManager, day, groupByCandidate, today]);
 
   const counts = useMemo(() => {
-    const scoped = rows.filter((row) => !day || interviewDate(row) === day || (!interviewDate(row) && row.status !== "COMPLETED"));
+    const scoped = rows.filter((row) => !day || candidateApplicationDay(row) === day || (!candidateApplicationDay(row) && row.status !== "COMPLETED"));
     const total = scoped.length;
     const arrived = scoped.filter((r) => r.status !== "NOT_ARRIVED" && r.status !== "ABSENT").length;
     const absent = scoped.filter((r) => r.status === "ABSENT").length;
@@ -397,7 +398,7 @@ export function CheckinBoard({
                   <TableCell className="font-medium">{c.full_name}</TableCell>
                   <TableCell className="tabular-nums">{c.phone}</TableCell>
                   <TableCell>{c.department}{c.specialization && <span className="block text-xs text-muted-foreground">{specializationLabel(c.specialization)}</span>}</TableCell>
-                  <TableCell>{c.shift || "—"}</TableCell>
+                  <TableCell>{candidateApplicationShift(c) || "—"}</TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
                       <StatusBadge status={c.status} />
@@ -474,7 +475,7 @@ export function CheckinBoard({
                     )}
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    {[c.department, specializationLabel(c.specialization), c.shift].filter(Boolean).join(" · ")}
+                    {[c.department, specializationLabel(c.specialization), candidateApplicationShift(c)].filter(Boolean).join(" · ")}
                   </p>
                   {c.interview_note && <p className="mt-1 text-xs font-medium text-amber-700">{c.interview_note}</p>}
                   {c.status === "ABSENT" && <div className="mt-3 rounded-lg bg-amber-50 p-3 text-sm dark:bg-amber-950/30">

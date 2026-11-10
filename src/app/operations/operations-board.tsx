@@ -13,9 +13,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useRealtimeRows } from "@/hooks/use-realtime-rows";
 import { DEPARTMENTS, type DepartmentCode } from "@/lib/departments";
 import { formatDateTime, formatDuration, normalizeText, safeUrl } from "@/lib/format";
-import { dayLabel, interviewDate, interviewDays, todayInVietnam } from "@/lib/interview-days";
+import { dayLabel, todayInVietnam } from "@/lib/interview-days";
 import { STATUS_LABEL, type Candidate, type CandidateDayHistory, type CandidateStatus, type Evaluation, type InterviewTable, type Room, type RubricCriterion } from "@/lib/types";
-import { groupCandidateApplications } from "@/components/candidate-applications";
+import { createCandidateApplicationStatusResolver } from "@/lib/candidate-application-status";
+import { candidateApplicationDay, candidateApplicationShift } from "@/lib/candidate-application-day";
 import { cn } from "@/lib/utils";
 
 export function OperationsBoard({ role, staffName, initialCandidates, initialAbsenceHistory, initialEvaluations, initialTables, initialRooms, criteria }: {
@@ -40,13 +41,16 @@ export function OperationsBoard({ role, staffName, initialCandidates, initialAbs
   const [candidateStatus, setCandidateStatus] = useState<CandidateStatus | "">("");
   const [dayFilter, setDayFilter] = useState(() => {
     const today = todayInVietnam();
-    return [...new Set([...interviewDays(initialCandidates), ...initialAbsenceHistory.map((item) => item.interview_day)])].includes(today) ? today : "";
+    const initialEvaluationByCandidate = new Map(initialEvaluations.map((evaluation) => [evaluation.candidate_id, evaluation]));
+    return initialCandidates.some((candidate) => candidateApplicationDay(candidate, initialEvaluationByCandidate.get(candidate.id)) === today)
+      || initialAbsenceHistory.some((item) => item.interview_day === today) ? today : "";
   });
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
 
   const candidateById = useMemo(() => new Map(candidates.rows.map((item) => [item.id, item])), [candidates.rows]);
   const evaluationByCandidate = useMemo(() => new Map(evaluations.rows.map((item) => [item.candidate_id, item])), [evaluations.rows]);
+  const getApplicationStatus = useMemo(() => createCandidateApplicationStatusResolver(candidates.rows, evaluations.rows), [candidates.rows, evaluations.rows]);
   const historyByTable = useMemo(() => {
     const result = new Map<string, Evaluation[]>();
     for (const evaluation of evaluations.rows) {
@@ -60,19 +64,21 @@ export function OperationsBoard({ role, staffName, initialCandidates, initialAbs
   }, [evaluations.rows]);
   const roomById = useMemo(() => new Map(rooms.rows.map((item) => [item.id, item])), [rooms.rows]);
   const availableDays = useMemo(() => [...new Set([
-    ...interviewDays(candidates.rows),
+    ...candidates.rows.map((candidate) => candidateApplicationDay(candidate, evaluationByCandidate.get(candidate.id))).filter((day): day is string => !!day),
     ...absenceHistory.rows.map((item) => item.interview_day),
-  ])].sort(), [candidates.rows, absenceHistory.rows]);
+  ])].sort(), [candidates.rows, absenceHistory.rows, evaluationByCandidate]);
 
   const visibleCandidateRows = useMemo(() => {
     const liveRows = candidates.rows.filter((candidate) => {
-      if (dayFilter && interviewDate(candidate) !== dayFilter) return false;
+      if (dayFilter && candidateApplicationDay(candidate, evaluationByCandidate.get(candidate.id)) !== dayFilter) return false;
       if (department && candidate.department !== department) return false;
-      if (candidateStatus && candidate.status !== candidateStatus) return false;
+      if (candidateStatus && getApplicationStatus(candidate) !== candidateStatus) return false;
       return !search || normalizeText(`${candidate.code} ${candidate.student_number ?? ""} ${candidate.full_name} ${candidate.phone ?? ""} ${candidate.email ?? ""}`).includes(search);
     }).map((candidate) => ({ key: candidate.id, candidate, history: null as CandidateDayHistory | null }));
 
     const historicalRows = absenceHistory.rows.filter((item) => {
+      const liveCandidate = item.candidate_id ? candidateById.get(item.candidate_id) : undefined;
+      if (liveCandidate && candidateApplicationDay(liveCandidate, evaluationByCandidate.get(liveCandidate.id)) === item.interview_day && getApplicationStatus(liveCandidate) !== "ABSENT") return false;
       if (dayFilter && item.interview_day !== dayFilter) return false;
       if (department && item.department !== department) return false;
       if (candidateStatus && item.status !== candidateStatus) return false;
@@ -87,15 +93,7 @@ export function OperationsBoard({ role, staffName, initialCandidates, initialAbs
       (a.history?.candidate_code ?? a.candidate?.code ?? "").localeCompare(b.history?.candidate_code ?? b.candidate?.code ?? "", "vi", { numeric: true }) ||
       (a.history?.interview_day ?? "").localeCompare(b.history?.interview_day ?? ""),
     );
-  }, [candidates.rows, absenceHistory.rows, candidateById, dayFilter, department, candidateStatus, search]);
-
-  const groupByCandidate = useMemo(() => {
-    const map = new Map<string, ReturnType<typeof groupCandidateApplications>[number]>();
-    for (const group of groupCandidateApplications(candidates.rows)) {
-      for (const application of group.applications) map.set(application.id, group);
-    }
-    return map;
-  }, [candidates.rows]);
+  }, [candidates.rows, absenceHistory.rows, candidateById, evaluationByCandidate, getApplicationStatus, dayFilter, department, candidateStatus, search]);
 
   const visibleRooms = useMemo(() => rooms.rows.map((room) => ({
     room,
@@ -173,16 +171,15 @@ export function OperationsBoard({ role, staffName, initialCandidates, initialAbs
           <TableBody>
             {visibleCandidateRows.map(({ key, candidate, history }) => {
               const evaluation = candidate && !history ? evaluationByCandidate.get(candidate.id) : undefined;
-              const group = candidate ? groupByCandidate.get(candidate.id) : undefined;
               return <TableRow key={key} className={candidate && !history ? "cursor-pointer hover:bg-muted/40" : "bg-red-50/40 dark:bg-red-950/10"}
                 onClick={candidate && !history ? () => setSelectedCandidateId(candidate.id) : undefined}>
                 <TableCell className="font-mono text-xs">{history?.candidate_code ?? candidate?.code ?? "—"}</TableCell>
                 <TableCell className="font-mono text-xs">{history?.student_number ?? candidate?.student_number ?? "—"}</TableCell>
                 <TableCell className="font-medium">{history?.full_name ?? candidate?.full_name ?? "Thí sinh đã xóa"}</TableCell>
                 <TableCell>{history?.phone ?? candidate?.phone ?? "—"}</TableCell>
-                <TableCell>{history?.department ?? group?.departments.join(" · ") ?? candidate?.department ?? "—"}</TableCell>
-                <TableCell>{history?.shift ?? group?.shifts.join(" ; ") ?? candidate?.shift ?? "—"}</TableCell>
-                <TableCell><StatusBadge status={history?.status ?? candidate?.status ?? "ABSENT"} /></TableCell>
+                <TableCell>{history?.department ?? candidate?.department ?? "—"}</TableCell>
+                <TableCell>{history?.shift ?? (candidate ? candidateApplicationShift(candidate, evaluation) : null) ?? "—"}</TableCell>
+                <TableCell><StatusBadge status={history?.status ?? (candidate ? getApplicationStatus(candidate) : "ABSENT")} /></TableCell>
                 <TableCell className="max-w-64 whitespace-normal text-xs text-muted-foreground">{history?.absent_note ?? candidate?.absent_note ?? "—"}</TableCell>
                 <TableCell>{evaluation?.table_label || (candidate?.table_id ? `${roomById.get(tables.rows.find((table) => table.id === candidate.table_id)?.room_id ?? "")?.name ?? ""} - ${tables.rows.find((table) => table.id === candidate.table_id)?.name ?? ""}` : "—")}</TableCell>
                 <TableCell>{candidate?.added_by_name || "—"}</TableCell>
@@ -243,10 +240,10 @@ export function OperationsBoard({ role, staffName, initialCandidates, initialAbs
       <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-lg">
         {selectedCandidate && <>
           <DialogHeader><DialogTitle>{selectedCandidate.full_name}</DialogTitle>
-            <DialogDescription>{selectedCandidate.code} · {groupByCandidate.get(selectedCandidate.id)?.departments.join(" · ") || selectedCandidate.department || "Chưa có Ban"} · {groupByCandidate.get(selectedCandidate.id)?.shifts.join(" ; ") || selectedCandidate.shift || "Chưa có ca"}</DialogDescription>
+            <DialogDescription>{selectedCandidate.code} · {selectedCandidate.department || "Chưa có Ban"} · {candidateApplicationShift(selectedCandidate, selectedEvaluation) || "Chưa có ca"}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 text-sm">
-            <StatusBadge status={selectedCandidate.status} />
+            <StatusBadge status={getApplicationStatus(selectedCandidate)} />
             <dl className="grid grid-cols-2 gap-x-3 gap-y-2">
               <dt className="text-muted-foreground">MSSV</dt><dd className="font-mono">{selectedCandidate.student_number || "—"}</dd>
               <dt className="text-muted-foreground">Khóa · Giới tính</dt><dd>{[selectedCandidate.student_cohort, selectedCandidate.gender === "NAM" ? "Nam" : selectedCandidate.gender === "NU" ? "Nữ" : selectedCandidate.gender === "KHAC" ? "Khác" : null].filter(Boolean).join(" · ") || "—"}</dd>

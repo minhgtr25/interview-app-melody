@@ -3,8 +3,9 @@ import { normalizeDepartment } from "@/lib/departments";
 import { isSpecializationForDepartment, specializationLabel } from "@/lib/specializations";
 import { formatDateTime, formatDuration, normalizePhone, normalizeText, safeUrl } from "@/lib/format";
 import { GENDERS, normalizeGender, normalizeStudentNumber } from "@/lib/personal-info";
-import { interviewDate, dayLabel } from "@/lib/interview-days";
+import { dayLabel } from "@/lib/interview-days";
 import { createCandidateApplicationStatusResolver } from "@/lib/candidate-application-status";
+import { candidateApplicationDay, candidateApplicationNote, candidateApplicationShift } from "@/lib/candidate-application-day";
 import {
   STATUS_LABEL,
   type Candidate,
@@ -190,8 +191,9 @@ export function exportResults(
   const allCandidates = candidates;
   const allEvaluations = evaluations;
   const getApplicationStatus = createCandidateApplicationStatusResolver(allCandidates, allEvaluations);
+  const allEvaluationByCandidate = new Map(allEvaluations.map((evaluation) => [evaluation.candidate_id, evaluation]));
   if (filter?.department) candidates = candidates.filter((candidate) => candidate.department === filter.department);
-  if (filter?.day) candidates = candidates.filter((candidate) => interviewDate(candidate) === filter.day);
+  if (filter?.day) candidates = candidates.filter((candidate) => candidateApplicationDay(candidate, allEvaluationByCandidate.get(candidate.id)) === filter.day);
   const candidateIds = new Set(candidates.map((candidate) => candidate.id));
   evaluations = evaluations.filter((evaluation) => candidateIds.has(evaluation.candidate_id));
   const evalBy = new Map(evaluations.map((e) => [e.candidate_id, e]));
@@ -220,7 +222,7 @@ export function exportResults(
     return [
       c.code, c.student_number ?? source?.student_number ?? "", c.student_number_raw ?? "", source ? `Lượt 2 từ ${source.code}` : "Lượt 1", c.full_name, c.student_cohort ?? "",
       GENDERS.find((gender) => gender.code === c.gender)?.name ?? "", c.phone ?? "", c.email ?? "",
-      c.facebook_url ?? "", c.department ?? "", specializationLabel(c.specialization) ?? "", interviewDate(c) ? dayLabel(interviewDate(c)!) : "", c.shift ?? "", STATUS_LABEL[getApplicationStatus(c)], c.interview_note ?? "",
+      c.facebook_url ?? "", c.department ?? "", specializationLabel(c.specialization) ?? "", candidateApplicationDay(c, e) ? dayLabel(candidateApplicationDay(c, e)!) : "", candidateApplicationShift(c, e) ?? "", STATUS_LABEL[getApplicationStatus(c)], candidateApplicationNote(c, e) ?? "",
       ...crit.map((k) => (e?.scores?.[k.id] != null ? Number(e.scores[k.id]) : "")),
       e?.average_score != null ? Number(e.average_score) : "",
       e?.comment ?? "",
@@ -272,9 +274,9 @@ export function exportResults(
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Kết quả");
   if (!filter?.day) {
-    const days = [...new Set(sorted.map(interviewDate).filter((day): day is string => !!day))].sort();
+    const days = [...new Set(sorted.map((candidate) => candidateApplicationDay(candidate, evalBy.get(candidate.id))).filter((day): day is string => !!day))].sort();
     for (const day of days) {
-      const dayRows = rows.filter((_, index) => interviewDate(sorted[index]) === day);
+      const dayRows = rows.filter((_, index) => candidateApplicationDay(sorted[index], evalBy.get(sorted[index].id)) === day);
       const daySheet = XLSX.utils.aoa_to_sheet([header, ...dayRows]);
       daySheet["!cols"] = ws["!cols"];
       daySheet["!autofilter"] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: dayRows.length, c: header.length - 1 } }) };

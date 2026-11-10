@@ -10,6 +10,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { DEPARTMENTS, type DepartmentCode } from "@/lib/departments";
 import { formatDateTime } from "@/lib/format";
+import { candidateApplicationShift } from "@/lib/candidate-application-day";
 import type { Candidate, Evaluation, ReviewDecision, ReviewDecisionEvent, ReviewPortal } from "@/lib/types";
 import { closeReviewPortal, openReviewPortal } from "./actions";
 
@@ -94,7 +95,7 @@ export function ReviewManagement({ portals, candidates, evaluations, decisions, 
       const decision = decisionById.get(candidate.id);
       return {
         "Ban": candidate.department ?? "", "Mã": candidate.code, "Họ tên": candidate.full_name,
-        "Ca": candidate.shift ?? "", "Điểm TB": evaluation?.average_score == null ? "" : Number(evaluation.average_score),
+        "Ca": candidateApplicationShift(candidate, evaluation) ?? "", "Điểm TB": evaluation?.average_score == null ? "" : Number(evaluation.average_score),
         "Phòng - Bàn": evaluation?.table_label ?? "", "Nhận xét phỏng vấn": evaluation?.comment ?? "",
         "Kết quả": decision ? DECISIONS[decision.decision] : "Chưa chốt",
         "Ghi chú chốt": decision?.note ?? "", "Chốt lúc": decision ? formatDateTime(decision.updated_at) : "",
