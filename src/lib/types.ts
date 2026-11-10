@@ -192,6 +192,7 @@ export interface DebateJudgeReview {
   judge_position: 1 | 2;
   scores: Record<string, number>;
   comment: string;
+  confirmed_by_id: string | null;
   confirmed_at: string;
   updated_at: string;
 }

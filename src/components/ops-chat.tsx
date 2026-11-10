@@ -35,6 +35,9 @@ export function OpsChat({ tableId, selfId, role, candidateId }: {
   useEffect(() => {
     let active = true;
     setConnected(false);
+    setMessages([]);
+    setLoading(true);
+    setLoadError(false);
     const client = createClient();
     const load = async () => {
       let query = client.from("ops_messages").select("*");
@@ -52,7 +55,11 @@ export function OpsChat({ tableId, selfId, role, candidateId }: {
       if (!active) return;
       channel = client.channel(`chat:${candidateId ?? tableId}:${Math.random().toString(36).slice(2)}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "ops_messages", filter: candidateId ? `candidate_id=eq.${candidateId}` : `table_id=eq.${tableId}` },
-        (payload: RealtimePostgresChangesPayload<OpsMessage>) => setMessages((current) => mergeMessages(current, [payload.new as OpsMessage])))
+        (payload: RealtimePostgresChangesPayload<OpsMessage>) => {
+          const message = payload.new as OpsMessage;
+          if (candidateId ? message.candidate_id !== candidateId : message.candidate_id !== null) return;
+          setMessages((current) => mergeMessages(current, [message]));
+        })
       .subscribe((status: string) => {
         if (status === "SUBSCRIBED") { setConnected(true); void load(); }
         if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") setConnected(false);
@@ -106,7 +113,7 @@ export function OpsChat({ tableId, selfId, role, candidateId }: {
     </div>
     <form onSubmit={send} className="flex gap-2">
       <Input value={draft} onChange={(event) => setDraft(event.target.value)} disabled={sending} maxLength={1000}
-        placeholder="Nhắn cho điều phối / giám khảo…" aria-label="Nội dung tin nhắn" />
+        placeholder={candidateId ? "Nhắn cho giám khảo bàn liên quan…" : "Nhắn cho điều phối / giám khảo…"} aria-label="Nội dung tin nhắn" />
       <Button type="submit" disabled={sending || !draft.trim()} aria-label="Gửi tin nhắn"><Send /></Button>
     </form>
   </div>;

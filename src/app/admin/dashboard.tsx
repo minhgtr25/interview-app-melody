@@ -88,13 +88,14 @@ export function Dashboard({
     if (!forceTable) return;
     if (!forceNote.trim()) return toast.error("Nhập lý do cưỡng chế kết thúc");
     setForceBusy(true);
-    const { error } = await createClient().rpc("admin_force_finish_interview", {
+    const debate = rooms.some((room) => room.id === forceTable.room_id && room.is_challenge);
+    const { error } = await createClient().rpc(debate ? "admin_force_finish_debate_pair" : "admin_force_finish_interview", {
       p_table_id: forceTable.id,
       p_note: forceNote.trim(),
     });
     setForceBusy(false);
     if (error) return toast.error(errorMessage(error));
-    toast.success("Đã cưỡng chế kết thúc và nộp phiếu điểm 10");
+    toast.success(debate ? "Đã cưỡng chế kết thúc ca Debate" : "Đã cưỡng chế kết thúc và nộp phiếu điểm 10");
     setForceTable(null);
     setForceNote("");
     router.refresh();
@@ -231,7 +232,9 @@ export function Dashboard({
             <DialogTitle>Cưỡng chế kết thúc phỏng vấn?</DialogTitle>
             <DialogDescription>
               {forceTable && `${roomName.get(forceTable.room_id) ?? "Phòng"} · ${forceTable.name}`}
-              {" — hệ thống sẽ chấm tối đa 10 điểm cho mọi tiêu chí, lưu ghi chú dưới tên Admin hoặc Support IT và giải phóng bàn."}
+              {forceTable && rooms.some((room) => room.id === forceTable.room_id && room.is_challenge)
+                ? " — hệ thống sẽ lưu ghi chú của Admin cho cả hai thí sinh và giải phóng bàn Debate."
+                : " — hệ thống sẽ chấm tối đa 10 điểm cho mọi tiêu chí, lưu ghi chú dưới tên Admin hoặc Support IT và giải phóng bàn."}
             </DialogDescription>
           </DialogHeader>
           <label className="grid gap-2 text-sm font-medium">

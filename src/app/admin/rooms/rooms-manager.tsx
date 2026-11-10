@@ -189,9 +189,14 @@ function ExistingRoom({ room, tables, profiles, busy, onSave, onDelete }: {
              .sort((a, b) => (a.debate_judge_position ?? 0) - (b.debate_judge_position ?? 0))
              .map((profile) => `${room.is_challenge ? `GK ${profile.debate_judge_position} · ` : ""}${profile.full_name || profile.email}`).join("; ") || "Chưa có tài khoản đại diện"}</span>
           <div className="flex items-center gap-2">
-            <Link href={`/admin-preview/${table.id}`} className="inline-flex h-8 items-center rounded-md border border-input bg-background px-2.5 text-xs font-medium hover:bg-muted">
+            {room.is_challenge ? profiles.filter((profile) => profile.role === "INTERVIEWER" && profile.table_id === table.id && profile.is_debate_judge)
+              .sort((a, b) => (a.debate_judge_position ?? 0) - (b.debate_judge_position ?? 0))
+              .map((judge) => <Link key={judge.id} href={`/admin-preview/${table.id}?judgeId=${judge.id}`}
+                className="inline-flex h-8 items-center rounded-md border border-input bg-background px-2.5 text-xs font-medium hover:bg-muted">
+                Mở GK {judge.debate_judge_position}
+              </Link>) : <Link href={`/admin-preview/${table.id}`} className="inline-flex h-8 items-center rounded-md border border-input bg-background px-2.5 text-xs font-medium hover:bg-muted">
               Mở bàn
-            </Link>
+            </Link>}
             <Button size="xs" variant="outline" onClick={openEditor} disabled={busy} aria-label={`Cấu hình ${room.name} - ${table.name}`}>
               Cấu hình bàn
             </Button>

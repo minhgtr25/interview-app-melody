@@ -475,10 +475,10 @@ export function CandidatesManager({
                     </div>
                     {viewEval.challenge_ended_at && <section className="space-y-3 rounded-xl border border-violet-200 bg-violet-50 p-4 dark:border-violet-900 dark:bg-violet-950/30">
                       <div><h3 className="font-semibold">Vòng thử thách</h3><p className="text-xs text-muted-foreground">{viewEval.challenge_interviewer_name} · {viewEval.challenge_table_label}</p></div>
-                      <ul className="divide-y rounded-lg border bg-background">
+                      {viewing.department !== "HCTC" && <ul className="divide-y rounded-lg border bg-background">
                         {criteria.map((criterion) => <li key={criterion.id} className="flex justify-between px-3 py-2 text-sm"><span>{criterion.name}</span><span>{viewEval.challenge_scores?.[criterion.id] ?? "—"}/{criterion.max_score}</span></li>)}
                         <li className="flex justify-between bg-muted/50 px-3 py-2 text-sm font-semibold"><span>Điểm trung bình</span><span>{viewEval.challenge_average_score ?? "—"}/10</span></li>
-                      </ul>
+                      </ul>}
                       <p className="whitespace-pre-wrap rounded-lg bg-background p-3 text-sm">{viewEval.challenge_comment || "Không có nhận xét"}</p>
                     </section>}
                   </>

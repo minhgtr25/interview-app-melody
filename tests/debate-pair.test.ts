@@ -27,6 +27,9 @@ describe("Debate pairs", () => {
       `);
       await db.exec(readFileSync(new URL("../supabase/schema.sql", import.meta.url), "utf8"));
       await db.exec(readFileSync(new URL("../supabase/migrations/20261203_debate_desks_and_accounts.sql", import.meta.url), "utf8"));
+      const textReviewMigration = readFileSync(new URL("../supabase/migrations/20261205_debate_text_reviews.sql", import.meta.url), "utf8");
+      await db.exec(textReviewMigration);
+      await db.exec(textReviewMigration);
       await db.exec("grant select on all tables in schema public to authenticated");
       await db.exec(`update public.interview_day_state
         set day=(clock_timestamp() at time zone 'Asia/Ho_Chi_Minh')::date where id='main'`);
@@ -64,6 +67,8 @@ describe("Debate pairs", () => {
       for (const candidate of candidates) {
         await db.query(`insert into public.evaluations(candidate_id) values($1)`, [candidate.id]);
       }
+      await db.query(`update public.evaluations set comment=case when candidate_id=$1 then 'Nhận xét vòng 1 người thứ nhất'
+        else 'Nhận xét vòng 1 người thứ hai' end where candidate_id in ($1,$2)`, [candidates[0].id, candidates[1].id]);
       const criteria = (await db.query<{ id: string; max_score: number }>(`
         select id,max_score from public.rubric_criteria where active
       `)).rows;
@@ -79,6 +84,9 @@ describe("Debate pairs", () => {
         .rejects.toThrow(/phân công/);
       expect((await asUser(JUDGE2, `select id from public.evaluations where candidate_id=$1`,
         [candidates[0].id])).rows).toHaveLength(1);
+      const roundOneReviews = (await asUser(JUDGE3, `select comment from public.evaluations
+        where candidate_id in ($1,$2) order by comment`, [candidates[0].id, candidates[1].id])).rows as { comment: string }[];
+      expect(roundOneReviews).toHaveLength(2);
       await act(JUDGE, candidates[0].id, desks[0].id, "ACCEPT");
       await act(JUDGE, candidates[1].id, desks[0].id, "FORWARD");
       await act(JUDGE2, candidates[1].id, desks[1].id, "REJECT");
@@ -92,43 +100,49 @@ describe("Debate pairs", () => {
       await act(JUDGE2, candidates[4].id, desks[1].id, "ACCEPT");
       await act(JUDGE2, candidates[5].id, desks[1].id, "ACCEPT");
       await asUser(JUDGE2, `select public.start_debate_pair($1)`, [desks[1].id]);
-      await asUser(JUDGE2, `select public.confirm_debate_review($1,$2,$3::jsonb,'Solo')`,
-        [desks[1].id, candidates[4].id, JSON.stringify(scores)]);
-      await asUser(JUDGE2, `select public.finalize_debate_candidate($1,$2)`, [desks[1].id, candidates[4].id]);
-      const soloEvaluation = (await db.query<{ challenge_average_score: number }>(`
-        select challenge_average_score from public.evaluations where candidate_id=$1
-      `, [candidates[4].id])).rows[0];
-      expect(Number(soloEvaluation.challenge_average_score)).toBe(10);
+      await asUser(JUDGE2, `select public.confirm_debate_comment($1,$2,'Solo first')`, [desks[1].id, candidates[4].id]);
+      await expect(asUser(JUDGE2, `select public.finalize_debate_pair($1,$2)`, [desks[1].id, null]))
+        .rejects.toThrow(/Cả hai thí sinh/);
+      await asUser(JUDGE2, `select public.confirm_debate_comment($1,$2,'Solo second')`, [desks[1].id, candidates[5].id]);
+      await asUser(JUDGE2, `select public.finalize_debate_pair($1,$2)`, [desks[1].id, null]);
+      const soloEvaluations = (await db.query<{ challenge_average_score: number | null; challenge_comment: string }>(`
+        select challenge_average_score,challenge_comment from public.evaluations
+        where candidate_id in ($1,$2) order by candidate_id
+      `, [candidates[4].id, candidates[5].id])).rows;
+      expect(soloEvaluations.map((row) => row.challenge_average_score)).toEqual([null, null]);
+      expect(soloEvaluations.map((row) => row.challenge_comment).sort()).toEqual(["Solo first", "Solo second"]);
       let rows = (await db.query<{ challenge_status: string; debate_batch_number: number | null; debate_request_status: string }>(`
         select challenge_status,debate_batch_number,debate_request_status from public.candidates
         where challenge_table_id=$1 order by code
       `, [desks[0].id])).rows;
       expect(rows.map((row) => row.debate_request_status)).toEqual(["SLOT", "SLOT", "WAITING", "WAITING"]);
       await asUser(JUDGE, `select public.start_debate_pair($1)`, [desks[0].id]);
-      await asUser(JUDGE, `select public.confirm_debate_review($1,$2,$3::jsonb,'Primary')`,
-        [desks[0].id, candidates[0].id, JSON.stringify(scores)]);
+      await asUser(JUDGE, `select public.confirm_debate_comment($1,$2,'Primary')`, [desks[0].id, candidates[0].id]);
       expect((await asUser(JUDGE3, `select comment from public.debate_judge_reviews where candidate_id=$1`,
         [candidates[0].id])).rows).toMatchObject([{ comment: "Primary" }]);
-      await expect(asUser(JUDGE, `select public.finalize_debate_candidate($1,$2)`,
-        [desks[0].id, candidates[0].id])).rejects.toThrow(/tất cả Giám khảo/);
-      const halfScores = Object.fromEntries(criteria.map((item) => [item.id, item.max_score / 2]));
-      await asUser(JUDGE3, `select public.confirm_debate_review($1,$2,$3::jsonb,'Secondary')`,
-        [desks[0].id, candidates[0].id, JSON.stringify(halfScores)]);
-      await expect(asUser(JUDGE3, `select public.finalize_debate_candidate($1,$2)`,
-        [desks[0].id, candidates[0].id])).rejects.toThrow(/Giám khảo Debate 1/);
-      await asUser(JUDGE, `select public.finalize_debate_candidate($1,$2)`, [desks[0].id, candidates[0].id]);
-      const firstEvaluation = (await db.query<{ challenge_average_score: number; challenge_comment: string }>(`
-        select challenge_average_score,challenge_comment from public.evaluations where candidate_id=$1
-      `, [candidates[0].id])).rows[0];
-      expect(Number(firstEvaluation.challenge_average_score)).toBe(7.5);
-      expect(firstEvaluation.challenge_comment).toContain("Secondary");
+      await expect(asUser(JUDGE, `select public.confirm_debate_comment($1,$2,'Wrong slot')`,
+        [desks[0].id, candidates[1].id])).rejects.toThrow(/vị trí/);
+      await expect(asUser(JUDGE3, `select public.confirm_debate_comment($1,$2,'Wrong slot')`,
+        [desks[0].id, candidates[0].id])).rejects.toThrow(/vị trí/);
+      await expect(asUser(JUDGE, `select public.finalize_debate_pair($1,$2)`,
+        [desks[0].id, null])).rejects.toThrow(/Cả hai thí sinh/);
+      await asUser(JUDGE3, `select public.confirm_debate_comment($1,$2,'Secondary')`, [desks[0].id, candidates[1].id]);
+      await asUser(ADMIN, `select public.admin_confirm_debate_comment($1,$2,$3,'Secondary via Admin')`,
+        [desks[0].id, candidates[1].id, JUDGE3]);
+      const adminReview = (await db.query<{ judge_id: string; confirmed_by_id: string }>(`
+        select judge_id,confirmed_by_id from public.debate_judge_reviews where candidate_id=$1
+      `, [candidates[1].id])).rows[0];
+      expect(adminReview).toMatchObject({ judge_id: JUDGE3, confirmed_by_id: ADMIN });
+      await expect(asUser(JUDGE3, `select public.finalize_debate_pair($1,$2)`,
+        [desks[0].id, null])).rejects.toThrow(/Giám khảo Debate 1/);
+      await asUser(ADMIN, `select public.finalize_debate_pair($1,$2)`, [desks[0].id, JUDGE]);
+      const pairEvaluations = (await db.query<{ candidate_id: string; challenge_average_score: number | null; challenge_comment: string }>(`
+        select candidate_id,challenge_average_score,challenge_comment from public.evaluations
+        where candidate_id in ($1,$2)
+      `, [candidates[0].id, candidates[1].id])).rows;
+      expect(pairEvaluations.find((row) => row.candidate_id === candidates[0].id)).toMatchObject({ challenge_average_score: null, challenge_comment: "Primary" });
+      expect(pairEvaluations.find((row) => row.candidate_id === candidates[1].id)).toMatchObject({ challenge_average_score: null, challenge_comment: "Secondary via Admin" });
       let table = (await db.query<{ status: string }>(`select status::text from public.tables where id=$1`, [desks[0].id])).rows[0];
-      expect(table.status).toBe("INTERVIEWING");
-      await asUser(JUDGE, `select public.confirm_debate_review($1,$2,$3::jsonb,'Primary')`,
-        [desks[0].id, candidates[1].id, JSON.stringify(scores)]);
-      await asUser(JUDGE3, `select public.confirm_debate_review($1,$2,$3::jsonb,'Secondary')`,
-        [desks[0].id, candidates[1].id, JSON.stringify(scores)]);
-      await asUser(JUDGE, `select public.finalize_debate_candidate($1,$2)`, [desks[0].id, candidates[1].id]);
       table = (await db.query<{ status: string }>(`select status::text from public.tables where id=$1`, [desks[0].id])).rows[0];
       expect(table.status).toBe("AVAILABLE");
       rows = (await db.query<{ challenge_status: string; debate_batch_number: number | null; debate_request_status: string }>(`
@@ -136,6 +150,12 @@ describe("Debate pairs", () => {
         where challenge_table_id=$1 order by code
       `, [desks[0].id])).rows;
       expect(rows.map((row) => row.challenge_status)).toEqual(["COMPLETED", "COMPLETED", "WAITING", "WAITING"]);
+      await asUser(JUDGE, `select public.route_debate_request($1,$2)`, [candidates[2].id, desks[0].id]);
+      const [routed] = (await db.query<{ challenge_table_id: string; debate_request_status: string }>(`
+        select challenge_table_id,debate_request_status from public.candidates where id=$1
+      `, [candidates[2].id])).rows;
+      expect(routed).toMatchObject({ challenge_table_id: desks[1].id, debate_request_status: "PENDING" });
+      await act(JUDGE2, candidates[2].id, desks[1].id, "REJECT");
       await act(JUDGE, candidates[2].id, desks[0].id, "ACCEPT");
       await act(JUDGE, candidates[3].id, desks[0].id, "ACCEPT");
       rows = (await db.query<{ challenge_status: string; debate_batch_number: number | null; debate_request_status: string }>(`
@@ -181,6 +201,17 @@ describe("Debate pairs", () => {
         select challenge_status,debate_request_status,debate_batch_number from public.candidates where id=$1
       `, [nextCandidateId])).rows[0];
       expect(next).toMatchObject({ challenge_status: "WAITING", debate_request_status: "PENDING", debate_batch_number: null });
+      await asUser(INTERVIEWER, `insert into public.ops_messages(table_id,candidate_id,sender_id,kind,body)
+        values($1,$2,$3,'CHAT','Xin trao đổi với giám khảo Debate')`, [regularDeskId, nextCandidateId, INTERVIEWER]);
+      const judgeMessages = (await asUser(JUDGE, `select sender_label,body from public.ops_messages where candidate_id=$1`,
+        [nextCandidateId])).rows as { sender_label: string; body: string }[];
+      expect(judgeMessages).toMatchObject([{ sender_label: "Giám khảo phỏng vấn · Interviewer", body: "Xin trao đổi với giám khảo Debate" }]);
+      expect((await asUser(JUDGE2, `select id from public.ops_messages where candidate_id=$1`,
+        [nextCandidateId])).rows).toHaveLength(1);
+      await asUser(JUDGE2, `insert into public.ops_messages(table_id,candidate_id,sender_id,kind,body)
+        values($1,$2,$3,'CHAT','Bàn Debate bên cạnh đã nhận tin')`, [desks[1].id, nextCandidateId, JUDGE2]);
+      expect((await asUser(INTERVIEWER, `select id from public.ops_messages where candidate_id=$1`,
+        [nextCandidateId])).rows).toHaveLength(2);
       await act(JUDGE, nextCandidateId, desks[0].id, "ACCEPT");
       const accepted = (await db.query<{ debate_slot_number: number; debate_batch_number: number }>(`
         select debate_slot_number,debate_batch_number from public.candidates where id=$1

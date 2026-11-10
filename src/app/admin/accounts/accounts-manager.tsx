@@ -2,8 +2,9 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { toast } from "sonner";
-import { Copy, KeyRound, Loader2, Pencil, Plus, Trash2, Wand2, AlertTriangle, Search, X } from "lucide-react";
+import { Copy, ExternalLink, KeyRound, Loader2, Pencil, Plus, Trash2, Wand2, AlertTriangle, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -212,6 +213,12 @@ export function AccountsManager({
                 </TableCell>
                 <TableCell>
                   <div className="flex justify-end gap-0.5">
+                    {p.is_debate_judge && p.table_id && <Link href={`/admin-preview/${p.table_id}?judgeId=${p.id}`}
+                      className="inline-flex size-8 items-center justify-center rounded-md hover:bg-muted"
+                      title={`Mở giao diện Giám khảo Debate ${p.debate_judge_position}`}
+                      aria-label={`Mở giao diện Giám khảo Debate ${p.debate_judge_position} · ${p.full_name || p.email}`}>
+                      <ExternalLink className="size-4" />
+                    </Link>}
                     <Button size="icon-sm" variant="ghost" title="Sửa" aria-label="Sửa"
                       onClick={() => setForm({ id: p.id, email: p.email, password: "", fullName: p.full_name, role: p.role, tableId: p.table_id ?? "", isDebateJudge: p.is_debate_judge })}>
                       <Pencil />

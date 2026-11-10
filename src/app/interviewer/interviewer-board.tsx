@@ -5,7 +5,7 @@ import Link from "next/link";
 import type { RealtimeChannel, RealtimePostgresChangesPayload } from "@supabase/supabase-js";
 import { toast } from "sonner";
 import {
-  BellRing, CheckCircle2, ExternalLink, Loader2, Minus, Plus, Send, Undo2, Coffee, Mail, Phone, Timer, Megaphone, MessageCircle, PanelRightClose, PanelRightOpen, Pause, Play, ShieldAlert,
+  BellRing, CheckCircle2, ExternalLink, GripVertical, Loader2, Minus, Plus, Send, Undo2, Coffee, Mail, Phone, Timer, Megaphone, MessageCircle, PanelRightClose, PanelRightOpen, Pause, Play, ShieldAlert,
 } from "lucide-react";
 import { useOpsChannel } from "@/hooks/use-ops-channel";
 import { AppHeader } from "@/components/app-header";
@@ -21,7 +21,7 @@ import {
 import { useRealtimeRows } from "@/hooks/use-realtime-rows";
 import { createClient, prepareRealtime } from "@/lib/supabase/client";
 import { errorMessage, safeUrl } from "@/lib/format";
-import type { Candidate, DebateJudgeReview, Evaluation, InterviewTable, OpsMessage, Room, RubricCriterion } from "@/lib/types";
+import type { Candidate, DebateJudgeReview, Evaluation, InterviewTable, OpsMessage, Profile, Room, RubricCriterion } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { DepartmentRadio } from "@/components/department-radio";
 import type { DepartmentCode } from "@/lib/departments";
@@ -128,6 +128,8 @@ export function InterviewerBoard({
   selfId,
   activeDay,
   adminPreview = false,
+  actingJudgeId,
+  previewJudges = [],
 }: {
   tableId: string;
   initialTables: InterviewTable[];
@@ -142,6 +144,8 @@ export function InterviewerBoard({
   selfId: string;
   activeDay: string | null;
   adminPreview?: boolean;
+  actingJudgeId?: string;
+  previewJudges?: Profile[];
 }) {
   useInterviewDayAutoSwitch(activeDay);
   const tbl = useRealtimeRows<InterviewTable>("tables", initialTables, "sort_order");
@@ -149,6 +153,9 @@ export function InterviewerBoard({
   const cand = useRealtimeRows<Candidate>("candidates", initialCandidates);
   const evals = useRealtimeRows<Evaluation>("evaluations", initialEvaluations);
   const debateReviews = useRealtimeRows<DebateJudgeReview>("debate_judge_reviews", initialDebateReviews, "updated_at");
+  const [selectedDebateCandidateId, setSelectedDebateCandidateId] = useState<string | null>(null);
+  const [dragDebateCandidateId, setDragDebateCandidateId] = useState<string | null>(null);
+  const [dragOverDeskId, setDragOverDeskId] = useState<string | null>(null);
   const patchTable = tbl.patchRow;
   const setCandidates = cand.setRows;
   const table = tbl.rows.find((t) => t.id === tableId);
@@ -158,16 +165,22 @@ export function InterviewerBoard({
     : undefined;
   const activeDebatePair = room?.is_challenge && anchorCandidate ? cand.rows.filter((item) =>
     item.challenge_table_id === tableId && item.debate_batch_number === anchorCandidate.debate_batch_number &&
-    item.challenge_status !== "WAITING") : [];
+    item.challenge_status !== "WAITING").sort((a, b) => (a.debate_slot_number ?? 0) - (b.debate_slot_number ?? 0)) : [];
   const candidate = room?.is_challenge
-    ? activeDebatePair.find((item) => item.challenge_status === "INTERVIEWING") ??
-      activeDebatePair.find((item) => item.challenge_status === "ASSIGNED") ?? anchorCandidate
+    ? activeDebatePair.find((item) => item.id === selectedDebateCandidateId && item.challenge_status !== "COMPLETED") ??
+      activeDebatePair.find((item) => item.debate_slot_number === debateJudgePosition && item.challenge_status !== "COMPLETED") ??
+      activeDebatePair.find((item) => item.challenge_status !== "COMPLETED") ?? anchorCandidate
     : anchorCandidate;
+  const effectiveJudgeId = actingJudgeId ?? selfId;
   const candidateEvaluation = candidate ? evals.rows.find((evaluation) => evaluation.candidate_id === candidate.id) : undefined;
   const candidateDebateReviews = candidate ? debateReviews.rows.filter((review) => review.candidate_id === candidate.id && review.table_id === tableId) : [];
-  const myDebateReview = candidateDebateReviews.find((review) => review.judge_id === selfId);
-  const allDebateJudgesConfirmed = candidateDebateReviews.length >= debateJudgeCount;
-  const canDirectDebate = adminPreview || debateJudgePosition === 1;
+  const myDebateReview = candidateDebateReviews.find((review) => review.judge_id === effectiveJudgeId);
+  const confirmedDebateComment = myDebateReview?.comment;
+  const allDebateJudgesConfirmed = activeDebatePair.length === 2 && activeDebatePair.every((item) =>
+    item.challenge_status === "COMPLETED" || debateReviews.rows.some((review) => review.candidate_id === item.id &&
+      review.table_id === tableId && review.judge_position === (debateJudgeCount === 2 ? item.debate_slot_number : 1)));
+  const canDirectDebate = debateJudgePosition === 1;
+  const canScoreDebateCandidate = !!candidate && (!room?.is_challenge || debateJudgeCount === 1 || candidate.debate_slot_number === debateJudgePosition);
   const pendingDebateRequests = cand.rows.filter((item) => item.department === "HCTC" &&
     item.challenge_status === "WAITING" && item.debate_request_status === "PENDING" &&
     item.challenge_table_id === tableId).sort((a, b) => (a.challenge_started_at ?? "").localeCompare(b.challenge_started_at ?? ""));
@@ -183,6 +196,7 @@ export function InterviewerBoard({
   const sharedDebateQueue = cand.rows.filter((item) => item.department === "HCTC" &&
     item.challenge_status === "WAITING" && item.debate_request_status === "WAITING")
     .sort((a, b) => (a.challenge_started_at ?? "").localeCompare(b.challenge_started_at ?? ""));
+  const visibleDebateChatIds = [...pendingDebateRequests, ...sharedDebateQueue, ...activeDebatePair].map((item) => item.id).join(",");
   const debatePeer = tbl.rows.find((desk) => desk.room_id === table?.room_id && desk.id !== tableId);
   const hasDebateSlot = table?.status === "AVAILABLE" || (table?.status === "ASSIGNED" && activeDebatePair.length === 1);
   const debateTables = tbl.rows.filter((desk) => desk.department === "HCTC" &&
@@ -221,7 +235,7 @@ export function InterviewerBoard({
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "ops_messages" },
         (payload: RealtimePostgresChangesPayload<OpsMessage>) => {
           const message = payload.new as OpsMessage;
-          const candidateThread = !!message.candidate_id && (completedAtTable.some(({ candidate: item }) => item?.id === message.candidate_id) || candidate?.id === message.candidate_id);
+          const candidateThread = !!message.candidate_id && (completedAtTable.some(({ candidate: item }) => item?.id === message.candidate_id) || candidate?.id === message.candidate_id || visibleDebateChatIds.split(",").includes(message.candidate_id));
           if ((message.table_id !== tableId && !candidateThread) || message.kind !== "CHAT" || message.sender_id === selfId || chatOpenRef.current) return;
           setChatUnread(true);
           toast.info(message.candidate_id ? "Giám khảo bàn liên quan gửi tin nhắn" : "Điều phối gửi tin nhắn", {
@@ -233,7 +247,7 @@ export function InterviewerBoard({
       .subscribe();
     }).catch(() => { /* chat dialog can still load messages over REST */ });
     return () => { active = false; if (channel) void client.removeChannel(channel); };
-  }, [tableId, selfId, completedAtTable, candidate?.id]);
+  }, [tableId, selfId, completedAtTable, candidate?.id, visibleDebateChatIds]);
 
   // Keep the assigned table in sync even when a Postgres Changes event is missed.
   useEffect(() => {
@@ -265,11 +279,11 @@ export function InterviewerBoard({
 
   // Nạp nháp khi đổi thí sinh (giữ điểm nếu lỡ tải lại trang)
   const candId = candidate?.id;
-  const draftId = candId && room?.is_challenge ? `${candId}:${selfId}` : candId;
+  const draftId = candId && room?.is_challenge ? `${candId}:${effectiveJudgeId}` : candId;
   useEffect(() => {
-    setDraft(myDebateReview ? { ...loadDraft(draftId ?? ""), scores: myDebateReview.scores, comment: myDebateReview.comment }
-      : draftId ? loadDraft(draftId) : { scores: {}, comment: "", secondDepartment: "", secondSpecialization: "", secondDate: "", secondTime: "" });
-  }, [draftId, myDebateReview]);
+    const saved = draftId ? loadDraft(draftId) : { scores: {}, comment: "", secondDepartment: "" as const, secondSpecialization: "" as const, secondDate: "", secondTime: "" };
+    setDraft(confirmedDebateComment === undefined ? saved : { ...saved, comment: confirmedDebateComment });
+  }, [draftId, confirmedDebateComment]);
 
   // Thông báo khi có thí sinh mới được gán
   const prevStatus = useRef(table?.status);
@@ -294,9 +308,8 @@ export function InterviewerBoard({
     });
   }
 
-  const missing = useMemo(() => rubric.filter((r) => draft.scores[r.id] == null), [rubric, draft.scores]);
-  const myDebateReviewNeedsUpdate = !!myDebateReview && (draft.comment.trim() !== myDebateReview.comment ||
-    rubric.some((criterion) => Number(draft.scores[criterion.id]) !== Number(myDebateReview.scores[criterion.id])));
+  const missing = useMemo(() => room?.is_challenge ? [] : rubric.filter((r) => draft.scores[r.id] == null), [rubric, draft.scores, room?.is_challenge]);
+  const myDebateReviewNeedsUpdate = !!myDebateReview && (draft.comment.trim() !== myDebateReview.comment);
   const avg = useMemo(() => {
     let sum = 0;
     let w = 0;
@@ -330,6 +343,30 @@ export function InterviewerBoard({
     if (error) return toast.error(errorMessage(error));
     await Promise.all([cand.refetch(), tbl.refetch(), evals.refetch()]);
     toast.success(action === "ACCEPT" ? "Đã đưa thí sinh vào bàn" : action === "FORWARD" ? `Đã gửi yêu cầu sang ${debatePeer?.name ?? "bàn kia"}` : action === "REJECT" ? "Đã từ chối; thí sinh về hàng chờ" : "Đã đưa thí sinh vào hàng chờ chung");
+  }
+
+  async function routeDebateRequest(candidateId: string) {
+    if (!debatePeer) return;
+    setBusy("start");
+    const { error } = await createClient().rpc("route_debate_request", {
+      p_candidate_id: candidateId, p_from_table_id: tableId,
+    });
+    setBusy(null);
+    if (error) return toast.error(errorMessage(error));
+    await cand.refetch();
+    toast.success(`Đã gửi yêu cầu sang ${debatePeer.name}`);
+  }
+
+  function debateDropAction(item: Candidate, targetId: string) {
+    if (!canDirectDebate || busy || item.challenge_status !== "WAITING") return;
+    if (targetId === tableId) {
+      if (hasDebateSlot && (item.debate_request_status === "WAITING" || item.challenge_table_id === tableId))
+        void handleDebateRequest(item.id, "ACCEPT");
+    } else if (targetId === debatePeer?.id) {
+      if (item.debate_request_status === "WAITING") void routeDebateRequest(item.id);
+      else if (item.debate_request_status === "PENDING" && item.challenge_table_id === tableId)
+        void handleDebateRequest(item.id, "FORWARD");
+    }
   }
 
   async function finishExternalChallenge(candidateToFinish: Candidate) {
@@ -369,8 +406,14 @@ export function InterviewerBoard({
       return toast.error("Ca Ban thứ hai cần đủ ngày giờ chưa qua theo giờ Hà Nội");
     setBusy("submit");
     const client = createClient();
+    if (room?.is_challenge && (!canScoreDebateCandidate || !draft.comment.trim())) {
+      setBusy(null);
+      return toast.error("Nhập nhận xét cho thí sinh được phân công trước khi xác nhận");
+    }
     let { error } = room?.is_challenge
-      ? await client.rpc("confirm_debate_review", { p_table_id: tableId, p_candidate_id: candidate.id, p_scores: draft.scores, p_comment: draft.comment })
+      ? adminPreview
+        ? await client.rpc("admin_confirm_debate_comment", { p_table_id: tableId, p_candidate_id: candidate.id, p_judge_id: effectiveJudgeId, p_comment: draft.comment })
+        : await client.rpc("confirm_debate_comment", { p_table_id: tableId, p_candidate_id: candidate.id, p_comment: draft.comment })
       : candidate.department === "HCTC"
       ? await client.rpc("submit_evaluation_to_debate", { p_table_id: tableId, p_scores: draft.scores, p_comment: draft.comment, p_debate_table_id: debateTableId })
       : await client.rpc("submit_evaluation_with_referral", {
@@ -411,16 +454,16 @@ export function InterviewerBoard({
   }
 
   async function finalizeDebateCandidate() {
-    if (!candidate || !room?.is_challenge || !canDirectDebate || adminPreview) return;
+    if (!candidate || !room?.is_challenge || !canDirectDebate) return;
     setBusy("submit");
-    const { error } = await createClient().rpc("finalize_debate_candidate", {
-      p_table_id: tableId, p_candidate_id: candidate.id,
+    const { error } = await createClient().rpc("finalize_debate_pair", {
+      p_table_id: tableId, p_judge_id: adminPreview ? effectiveJudgeId : null,
     });
     setBusy(null);
     if (error) return toast.error(errorMessage(error));
-    if (draftId) clearDraft(draftId);
+    activeDebatePair.forEach((item) => clearDraft(`${item.id}:${effectiveJudgeId}`));
     await Promise.all([tbl.refetch(), cand.refetch(), evals.refetch(), debateReviews.refetch()]);
-    toast.success(`Đã chốt kết quả Debate cho ${candidate.full_name}`);
+    toast.success("Đã chốt nhận xét cho cả ca Debate");
   }
 
   async function returnToQueue() {
@@ -430,7 +473,7 @@ export function InterviewerBoard({
     setBusy(null);
     if (error) return toast.error(errorMessage(error));
     if (room?.is_challenge) {
-      activeDebatePair.forEach((item) => clearDraft(`${item.id}:${selfId}`));
+      activeDebatePair.forEach((item) => clearDraft(`${item.id}:${effectiveJudgeId}`));
       await Promise.all([tbl.refetch(), cand.refetch()]);
       toast.success("Đã trả ca Debate về hàng chờ");
       return;
@@ -455,7 +498,7 @@ export function InterviewerBoard({
     setAdminForceOpen(false);
     setAdminForceNote("");
     await Promise.all([tbl.refetch(), cand.refetch(), evals.refetch()]);
-    toast.success("Đã cưỡng chế kết thúc và nộp phiếu điểm 10");
+    toast.success(room?.is_challenge ? "Đã cưỡng chế kết thúc ca Debate" : "Đã cưỡng chế kết thúc và nộp phiếu điểm 10");
   }
 
   const ops = useOpsChannel();
@@ -542,10 +585,22 @@ export function InterviewerBoard({
       {adminPreview && <div className="border-b border-amber-300 bg-amber-50 px-4 py-2 text-center text-xs font-medium text-amber-950 dark:border-amber-900 dark:bg-amber-950/50 dark:text-amber-100 sm:text-sm">
         Đang mở bàn bằng quyền Admin. Các thao tác tại đây sẽ cập nhật dữ liệu thật.
       </div>}
+      {adminPreview && room?.is_challenge && <div className="flex flex-wrap items-center gap-2 border-b bg-background px-4 py-2 text-sm">
+        <span className="font-medium">Tài khoản tại {table?.name}:</span>
+        {previewJudges.map((judge) => <Link key={judge.id} href={`/admin-preview/${tableId}?judgeId=${judge.id}`}
+          className={cn("rounded-md border px-3 py-1.5", actingJudgeId === judge.id ? "border-primary bg-primary text-primary-foreground" : "hover:bg-muted")}>
+          GK {judge.debate_judge_position} · {judge.full_name || judge.email}
+        </Link>)}
+      </div>}
 
       <Dialog open={chatOpen} onOpenChange={setChatOpen}>
         <DialogContent className="sm:max-w-lg">
-          <DialogHeader><DialogTitle>{chatCandidateId ? `Chat về thí sinh ${cand.rows.find((item) => item.id === chatCandidateId)?.full_name ?? ""}` : `Chat với điều phối · ${room?.name} - ${table?.name}`}</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{chatCandidateId ? (() => {
+            const threadCandidate = cand.rows.find((item) => item.id === chatCandidateId);
+            const peerTableId = room?.is_challenge ? threadCandidate?.table_id : threadCandidate?.challenge_table_id;
+            const peerTable = tbl.rows.find((item) => item.id === peerTableId);
+            return `Chat với Giám khảo · ${roomRows.rows.find((item) => item.id === peerTable?.room_id)?.name ?? "Phòng Debate"} - ${peerTable?.name ?? "bàn liên quan"}`;
+          })() : `Chat với điều phối · ${room?.name} - ${table?.name}`}</DialogTitle></DialogHeader>
           <OpsChat tableId={tableId} selfId={selfId} role="interviewer" candidateId={chatCandidateId} />
         </DialogContent>
       </Dialog>
@@ -555,7 +610,7 @@ export function InterviewerBoard({
           <DialogHeader>
             <DialogTitle>Cưỡng chế kết thúc lượt phỏng vấn?</DialogTitle>
             <DialogDescription>
-              {room?.is_challenge ? "Cả ca Debate" : candidate?.full_name ?? "Thí sinh tại bàn"} sẽ được nộp phiếu điểm 10, ghi chú Admin và giải phóng bàn.
+              {room?.is_challenge ? "Cả ca Debate sẽ được lưu ghi chú Admin và giải phóng bàn." : `${candidate?.full_name ?? "Thí sinh tại bàn"} sẽ được nộp phiếu điểm 10, ghi chú Admin và giải phóng bàn.`}
               {table?.status === "ASSIGNED" ? " Thí sinh đang chờ giám khảo xác nhận bắt đầu." : ""}
             </DialogDescription>
           </DialogHeader>
@@ -564,25 +619,67 @@ export function InterviewerBoard({
           <DialogFooter>
             <Button variant="outline" onClick={() => setAdminForceOpen(false)} disabled={busy === "force"}>Huỷ</Button>
             <Button variant="destructive" onClick={() => void adminForceFinish()} disabled={busy === "force" || !adminForceNote.trim()}>
-              {busy === "force" ? <Loader2 className="animate-spin" /> : <ShieldAlert />} Kết thúc và nộp điểm 10
+              {busy === "force" ? <Loader2 className="animate-spin" /> : <ShieldAlert />} {room?.is_challenge ? "Kết thúc ca Debate" : "Kết thúc và nộp điểm 10"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      <main className="mx-auto grid w-full max-w-6xl items-start gap-5 px-3 py-4 pb-32 sm:px-4 sm:py-5 lg:grid-cols-[minmax(0,1fr)_340px]">
+      <main className={cn("mx-auto grid w-full items-start gap-5 px-3 py-4 pb-32 sm:px-4 sm:py-5",
+        room?.is_challenge ? "max-w-7xl" : "max-w-6xl",
+        !room?.is_challenge && completedAtTable.length > 0 && roundTwoOpen && "lg:grid-cols-[minmax(0,1fr)_340px]")}>
         <div className="min-w-0">
         {!table && <p className="py-16 text-center text-muted-foreground">Không tìm thấy bàn được phân công.</p>}
 
         {room?.is_challenge && (
           <div className="mb-5 space-y-4">
+            <section className="rounded-2xl border bg-card p-4 sm:p-5">
+              <h2 className="text-lg font-semibold">Phòng Debate · kéo thí sinh vào bàn</h2>
+              <p className="mt-1 text-sm text-muted-foreground">GK 1 kéo thí sinh từ yêu cầu hoặc hàng chờ vào bàn của mình. Kéo sang bàn còn lại sẽ gửi yêu cầu để GK 1 bàn đó đồng ý hoặc từ chối.</p>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                {[table, debatePeer].filter((desk): desk is InterviewTable => !!desk).map((desk) => {
+                  const anchor = cand.rows.find((item) => item.id === desk.current_candidate_id);
+                  const pair = anchor ? cand.rows.filter((item) => item.challenge_table_id === desk.id && item.debate_batch_number === anchor.debate_batch_number && item.debate_request_status === "SLOT")
+                    .sort((a, b) => (a.debate_slot_number ?? 0) - (b.debate_slot_number ?? 0)) : [];
+                  const ownDesk = desk.id === tableId;
+                  const dragged = cand.rows.find((item) => item.id === dragDebateCandidateId);
+                  const canDrop = canDirectDebate && !!dragged && (ownDesk
+                    ? hasDebateSlot && (dragged.debate_request_status === "WAITING" || (dragged.debate_request_status === "PENDING" && dragged.challenge_table_id === tableId))
+                    : dragged.debate_request_status === "WAITING" || (dragged.debate_request_status === "PENDING" && dragged.challenge_table_id === tableId));
+                  return <div key={desk.id} onDragOver={(event) => {
+                      if (!canDrop) return;
+                      event.preventDefault(); event.dataTransfer.dropEffect = "move"; setDragOverDeskId(desk.id);
+                    }} onDragLeave={() => setDragOverDeskId((id) => id === desk.id ? null : id)}
+                    onDrop={(event) => {
+                      event.preventDefault(); setDragOverDeskId(null);
+                      const item = cand.rows.find((row) => row.id === event.dataTransfer.getData("text/plain"));
+                      if (item && canDrop) debateDropAction(item, desk.id);
+                    }}
+                    className={cn("rounded-xl border-2 border-dashed p-3 transition-colors", ownDesk ? "border-violet-400 bg-violet-50/50 dark:bg-violet-950/20" : "border-slate-300", dragOverDeskId === desk.id && canDrop && "border-emerald-500 bg-emerald-50 dark:bg-emerald-950/30")}>
+                    <div className="flex items-center justify-between gap-2"><p className="font-semibold">{desk.name} {ownDesk ? "· Bàn của bạn" : "· Bàn bên cạnh"}</p>
+                      <span className="text-xs text-muted-foreground">{desk.status === "AVAILABLE" ? "Trống" : desk.status === "ASSIGNED" ? "Chờ bắt đầu" : "Đang Debate"}</span></div>
+                    <div className="mt-3 grid gap-2">
+                      {[1, 2].map((slot) => {
+                        const occupant = pair.find((item) => item.debate_slot_number === slot);
+                        return <div key={slot} className="rounded-lg border bg-background px-3 py-2 text-sm">
+                          <span className="mr-2 text-xs font-semibold text-muted-foreground">Vị trí {slot}</span>
+                          {occupant ? <span className="font-medium">{occupant.full_name} · {occupant.code}</span> : <span className="text-muted-foreground">Đang trống</span>}
+                        </div>;
+                      })}
+                    </div>
+                    <p className="mt-3 text-xs text-muted-foreground">{ownDesk ? "Thả vào đây để nhận thí sinh" : "Thả vào đây để gửi yêu cầu chuyển bàn"}</p>
+                  </div>;
+                })}
+              </div>
+            </section>
             <section className="rounded-2xl border border-violet-300 bg-violet-50 p-4 dark:border-violet-900 dark:bg-violet-950/30 sm:p-5">
               <h2 className="text-lg font-semibold">Yêu cầu gửi đến {table?.name}</h2>
               <p className="mb-4 text-sm text-muted-foreground">{canDirectDebate ? `Giám khảo 1 quyết định nhận vào vị trí trống, chuyển sang ${debatePeer?.name ?? "bàn kia"}, hoặc đưa vào hàng chờ chung.` : "Giám khảo 1 của bàn sẽ xử lý các yêu cầu này."}</p>
               {pendingDebateRequests.length ? <ul className="space-y-3">{pendingDebateRequests.map((item) =>
-                <li key={item.id} className="rounded-xl border bg-background p-3">
+                <li key={item.id} draggable={canDirectDebate} onDragStart={(event) => { event.dataTransfer.setData("text/plain", item.id); setDragDebateCandidateId(item.id); }} onDragEnd={() => { setDragDebateCandidateId(null); setDragOverDeskId(null); }}
+                  className={cn("rounded-xl border bg-background p-3", canDirectDebate && "cursor-grab active:cursor-grabbing")}>
                   <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
-                    <div><p className="font-semibold">{item.full_name}</p><p className="font-mono text-xs text-muted-foreground">{item.code} · {item.shift ?? "Không có ca"}</p></div>
+                    <div className="flex items-start gap-2">{canDirectDebate && <GripVertical className="mt-1 size-4 text-muted-foreground" />}<div><p className="font-semibold">{item.full_name}</p><p className="font-mono text-xs text-muted-foreground">{item.code} · {item.shift ?? "Không có ca"}</p></div></div>
                     <span className="rounded-full bg-violet-100 px-2 py-1 text-xs font-medium text-violet-800">
                       {item.debate_requested_from_table_id ? `Chuyển từ ${tbl.rows.find((desk) => desk.id === item.debate_requested_from_table_id)?.name ?? "bàn kia"}` : "Từ vòng phỏng vấn"}
                     </span>
@@ -599,18 +696,22 @@ export function InterviewerBoard({
                     <Button size="sm" variant="outline" onClick={() => void handleDebateRequest(item.id, "WAIT")} disabled={busy !== null}>Đưa vào danh sách chờ</Button>
                     {item.debate_requested_from_table_id && <Button size="sm" variant="destructive" onClick={() => void handleDebateRequest(item.id, "REJECT")} disabled={busy !== null}>Từ chối chuyển bàn</Button>}
                   </div>}
+                  <Button size="sm" variant="outline" className="mt-2" onClick={() => openChat(item.id)}><MessageCircle /> Chat với Giám khảo phỏng vấn</Button>
                 </li>)}</ul> : <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">Chưa có yêu cầu mới.</p>}
             </section>
             <section className="rounded-2xl border bg-card p-4 sm:p-5">
               <h2 className="text-lg font-semibold">Danh sách chờ chung · {sharedDebateQueue.length}</h2>
               <p className="mb-4 text-sm text-muted-foreground">Cả hai giám khảo Debate đều thấy danh sách này. Mỗi giám khảo tự chọn người vào bàn của mình.</p>
               {sharedDebateQueue.length ? <ul className="space-y-2">{sharedDebateQueue.map((item) =>
-                <li key={item.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border p-3">
+                <li key={item.id} draggable={canDirectDebate} onDragStart={(event) => { event.dataTransfer.setData("text/plain", item.id); setDragDebateCandidateId(item.id); }} onDragEnd={() => { setDragDebateCandidateId(null); setDragOverDeskId(null); }}
+                  className={cn("flex flex-wrap items-center justify-between gap-2 rounded-xl border p-3", canDirectDebate && "cursor-grab active:cursor-grabbing")}>
                   <div><p className="font-semibold">{item.full_name}</p><p className="font-mono text-xs text-muted-foreground">{item.code} · Chờ <Elapsed since={item.challenge_started_at} /></p>
                     <p className="mt-1 text-xs text-muted-foreground">Vòng 1: {evals.rows.find((evaluation) => evaluation.candidate_id === item.id)?.average_score ?? "—"}/10 · {evals.rows.find((evaluation) => evaluation.candidate_id === item.id)?.comment || "Không có nhận xét"}</p></div>
                   {canDirectDebate && <Button size="sm" onClick={() => void handleDebateRequest(item.id, "ACCEPT")} disabled={busy !== null || !hasDebateSlot}>
                     Đưa vào {table?.name} · vị trí {table?.status === "AVAILABLE" ? 1 : 2}
                   </Button>}
+                  {canDirectDebate && debatePeer && <Button size="sm" variant="outline" onClick={() => void routeDebateRequest(item.id)} disabled={busy !== null}>Gửi sang {debatePeer.name}</Button>}
+                  <Button size="sm" variant="outline" onClick={() => openChat(item.id)}><MessageCircle /> Chat Giám khảo</Button>
                 </li>)}</ul> : <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">Danh sách chờ đang trống.</p>}
             </section>
           </div>
@@ -642,6 +743,14 @@ export function InterviewerBoard({
             <p className="mt-3 text-xs text-muted-foreground">
               Đã gán <Elapsed since={table.assigned_at} /> trước
             </p>
+            {room?.is_challenge && <div className="mt-4 grid gap-2 text-left sm:grid-cols-2">{activeDebatePair.map((item) => {
+              const firstRound = evals.rows.find((evaluation) => evaluation.candidate_id === item.id);
+              return <div key={item.id} className="rounded-xl border bg-background p-3 text-sm">
+                <p className="font-semibold">Vị trí {item.debate_slot_number} · {item.full_name}</p>
+                <p className="mt-1 text-xs text-muted-foreground">Nhận xét vòng 1 · {firstRound?.interviewer_name || "Giám khảo phỏng vấn"}</p>
+                <p className="mt-1 whitespace-pre-wrap">{firstRound?.comment || "Chưa có nhận xét"}</p>
+              </div>;
+            })}</div>}
             <Button
               onClick={start}
               disabled={busy !== null || (!!room?.is_challenge && (!canDirectDebate || activeDebatePair.length !== 2))}
@@ -666,11 +775,20 @@ export function InterviewerBoard({
           <div className="space-y-5">
             {room?.is_challenge && <section className="rounded-2xl border bg-card p-4">
               <h2 className="font-semibold">Ca Debate {candidate.debate_batch_number} · 2 thí sinh</h2>
-              <div className="mt-2 grid gap-2 sm:grid-cols-2">{activeDebatePair.map((item) =>
-                <div key={item.id} className="rounded-lg border p-3 text-sm">
-                  <p className="font-medium">{item.full_name}</p><p className="text-muted-foreground">{item.code} · {item.challenge_status === "COMPLETED" ? "Đã chấm" : "Đang chấm"}</p>
-                </div>)}</div>
-              <p className="mt-2 text-xs text-muted-foreground">Chấm từng thí sinh; bàn mở ca tiếp theo sau khi lưu đủ 2 phiếu.</p>
+              <p className="mt-1 text-xs text-muted-foreground">Chọn một thí sinh để xem phiếu vòng 1. {debateJudgeCount === 2 ? "GK 1 nhận xét vị trí 1, GK 2 nhận xét vị trí 2." : "GK 1 nhận xét cả hai vị trí."}</p>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">{activeDebatePair.map((item) => {
+                const firstRound = evals.rows.find((evaluation) => evaluation.candidate_id === item.id);
+                const expectedPosition = debateJudgeCount === 2 ? item.debate_slot_number : 1;
+                const review = debateReviews.rows.find((entry) => entry.candidate_id === item.id && entry.table_id === tableId && entry.judge_position === expectedPosition);
+                return <button key={item.id} type="button" onClick={() => setSelectedDebateCandidateId(item.id)}
+                  aria-pressed={candidate.id === item.id}
+                  className={cn("rounded-xl border p-3 text-left text-sm hover:border-primary", candidate.id === item.id && "border-primary bg-primary/5 ring-2 ring-primary/20")}>
+                  <p className="font-semibold">Vị trí {item.debate_slot_number} · {item.full_name}</p>
+                  <p className="mt-0.5 font-mono text-xs text-muted-foreground">{item.code} · {review ? "Đã xác nhận nhận xét" : `Chờ GK ${expectedPosition}`}</p>
+                  <p className="mt-2 text-xs font-medium text-muted-foreground">Nhận xét vòng 1 · {firstRound?.interviewer_name || "Giám khảo phỏng vấn"}</p>
+                  <p className="mt-1 line-clamp-3 whitespace-pre-wrap text-sm">{firstRound?.comment || "Chưa có nhận xét"}</p>
+                </button>;
+              })}</div>
             </section>}
             <section className="rounded-2xl border bg-card p-4 sm:p-5">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -730,19 +848,19 @@ export function InterviewerBoard({
                 </section>
               )}
               {room?.is_challenge && <section className="rounded-2xl border bg-card p-4">
-                <h2 className="font-semibold">Xác nhận đánh giá · {candidateDebateReviews.length}/{debateJudgeCount}</h2>
-                <p className="mt-1 text-xs text-muted-foreground">Mỗi giám khảo chấm điểm và ghi nhận xét riêng. Điểm cuối là trung bình của các giám khảo tại bàn.</p>
-                <div className="mt-3 grid gap-2 sm:grid-cols-2">{Array.from({ length: debateJudgeCount }, (_, index) => {
-                  const review = candidateDebateReviews.find((item) => item.judge_position === index + 1);
-                  return <div key={index} className="rounded-lg border p-3 text-sm">
-                    <p className="font-semibold">Giám khảo {index + 1} · {review ? "Đã xác nhận" : "Chưa xác nhận"}</p>
-                    {review && <p className="mt-1 whitespace-pre-wrap text-muted-foreground">{review.comment || "Không có nhận xét"}</p>}
+                <h2 className="font-semibold">Nhận xét của hai vị trí</h2>
+                <p className="mt-1 text-xs text-muted-foreground">GK 1 chốt cả ca sau khi mỗi thí sinh đã có nhận xét của giám khảo phụ trách.</p>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">{activeDebatePair.map((item) => {
+                  const expectedPosition = debateJudgeCount === 2 ? item.debate_slot_number : 1;
+                  const review = debateReviews.rows.find((entry) => entry.candidate_id === item.id && entry.table_id === tableId && entry.judge_position === expectedPosition);
+                  return <div key={item.id} className="rounded-lg border p-3 text-sm">
+                    <p className="font-semibold">{item.full_name} · GK {expectedPosition} · {review ? "Đã xác nhận" : "Chưa xác nhận"}</p>
+                    {review && review.confirmed_by_id && review.confirmed_by_id !== review.judge_id && <p className="mt-1 text-xs font-medium text-amber-700">Admin xác nhận thay</p>}
+                    {review && <p className="mt-1 whitespace-pre-wrap text-muted-foreground">{review.comment}</p>}
                   </div>;
                 })}</div>
-                {debateJudgePosition === 1 && myDebateReview && !allDebateJudgesConfirmed &&
-                  <p className="mt-3 text-xs text-amber-700">Đang chờ Giám khảo 2 xác nhận.</p>}
               </section>}
-              {rubric.map((r, i) => (
+              {!room?.is_challenge && rubric.map((r, i) => (
                 <div key={r.id} className="rounded-2xl border bg-card p-3 sm:p-4">
                   <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between sm:gap-2">
                     <div>
@@ -763,15 +881,15 @@ export function InterviewerBoard({
                   />
                 </div>
               ))}
-              {rubric.length === 0 && (
+              {!room?.is_challenge && rubric.length === 0 && (
                 <p className="rounded-xl border bg-card p-4 text-sm text-muted-foreground">
                   Admin chưa cấu hình tiêu chí chấm. Bạn vẫn có thể ghi nhận xét và nộp.
                 </p>
               )}
 
-              <div className="rounded-2xl border bg-card p-4">
+              {canScoreDebateCandidate ? <div className="rounded-2xl border bg-card p-4">
                   <label htmlFor="comment" className="mb-2 block font-semibold">
-                   {room?.is_challenge ? "Đánh giá Debate" : "Nhận xét"}
+                   {room?.is_challenge ? `Nhận xét Debate · ${candidate.full_name}` : "Nhận xét"}
                 </label>
                 <Textarea
                   id="comment"
@@ -781,7 +899,7 @@ export function InterviewerBoard({
                   className="min-h-28 text-base"
                   maxLength={5000}
                 />
-              </div>
+              </div> : <p className="rounded-xl border bg-muted/40 p-4 text-sm text-muted-foreground">Thí sinh này do Giám khảo {candidate.debate_slot_number} phụ trách. Bạn vẫn xem được phiếu vòng 1 và nhận xét khi giám khảo đó xác nhận.</p>}
               {candidate.department === "CM" && table.department === "CM" && !candidate.source_candidate_id && (
                 <div className="rounded-2xl border bg-card p-4">
                   <p className="mb-1 font-semibold">Lượt phỏng vấn tiếp theo</p>
@@ -827,7 +945,7 @@ export function InterviewerBoard({
               </div>
               {item.challenge_status !== "COMPLETED" && <p className="flex items-center gap-1 text-xs tabular-nums text-muted-foreground"><Timer className="size-3" />Từ lúc chuyển vòng 2: <Elapsed since={item.challenge_started_at} /></p>}
               <div className="flex flex-wrap gap-2">
-                {item.department === "HCTC" && <Button size="sm" variant="outline" onClick={() => openChat(item.id)}><MessageCircle /> Chat Debate</Button>}
+                {item.department === "HCTC" && <Button size="sm" variant="outline" onClick={() => openChat(item.id)}><MessageCircle /> Chat với Giám khảo Debate</Button>}
                 {item.department === "VH" && item.challenge_status !== "COMPLETED" && <Button size="sm" onClick={() => setFinishExternal(item)} disabled={busy !== null}><CheckCircle2 /> Xác nhận hoàn tất</Button>}
               </div>
             </li>)}
@@ -849,22 +967,22 @@ export function InterviewerBoard({
               <Undo2 />
               <span className="hidden sm:inline">Nhầm thí sinh</span>
             </Button>}
-            <div className="hidden text-center sm:block">
+            {!room?.is_challenge && <div className="hidden text-center sm:block">
               <p className="text-xs text-muted-foreground">Điểm TB</p>
               <p className="font-mono text-xl font-semibold tabular-nums">{avg == null ? "–" : avg.toFixed(2)}</p>
-            </div>
-            <Button
+            </div>}
+            {canScoreDebateCandidate && <Button
               className="h-12 min-w-0 flex-1 px-2 text-sm font-semibold leading-tight sm:h-14 sm:px-4 sm:text-base"
               onClick={() => setConfirm("submit")}
-               disabled={busy !== null || missing.length > 0 || (!!room?.is_challenge && adminPreview)}
+               disabled={busy !== null || missing.length > 0 || (!!room?.is_challenge && !draft.comment.trim())}
             >
               {busy === "submit" ? <Loader2 className="animate-spin" /> : <Send />}
-               {missing.length > 0 ? `Còn ${missing.length} tiêu chí chưa chấm` : room?.is_challenge ? myDebateReview ? "Cập nhật xác nhận của tôi" : "Xác nhận đánh giá của tôi" : "Nộp đánh giá & Kết thúc"}
-            </Button>
-            {room?.is_challenge && canDirectDebate && !adminPreview && <Button
+               {missing.length > 0 ? `Còn ${missing.length} tiêu chí chưa chấm` : room?.is_challenge ? myDebateReview ? "Cập nhật nhận xét của tôi" : "Xác nhận nhận xét của tôi" : "Nộp đánh giá & Kết thúc"}
+            </Button>}
+            {room?.is_challenge && canDirectDebate && <Button
               className="h-12 shrink-0 sm:h-14" disabled={busy !== null || !allDebateJudgesConfirmed || myDebateReviewNeedsUpdate}
               onClick={() => void finalizeDebateCandidate()}>
-              Chốt kết quả cuối
+              Chốt cả ca
             </Button>}
           </div>
         </div>
@@ -874,12 +992,12 @@ export function InterviewerBoard({
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-               {confirm === "submit" ? room?.is_challenge ? "Xác nhận đánh giá của bạn?" : "Nộp đánh giá và kết thúc?" : "Trả thí sinh về phòng chờ?"}
+               {confirm === "submit" ? room?.is_challenge ? "Xác nhận nhận xét của bạn?" : "Nộp đánh giá và kết thúc?" : "Trả thí sinh về phòng chờ?"}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {confirm === "submit"
                  ? room?.is_challenge
-                   ? `Lưu điểm và nhận xét riêng của bạn cho ${candidate?.full_name}. Giám khảo 1 chốt kết quả sau khi tất cả đã xác nhận.`
+                   ? `Lưu nhận xét riêng của bạn cho ${candidate?.full_name}. GK 1 chốt cả ca sau khi hai thí sinh đã được nhận xét.`
                    : `Điểm TB ${avg == null ? "–" : avg.toFixed(2)}/10 cho ${candidate?.full_name}. Sau khi nộp, đồng hồ dừng và bàn được giải phóng. Không thể sửa lại từ màn hình này.`
                 : `${candidate?.full_name ?? "Thí sinh"} sẽ quay về hàng chờ, điểm đang chấm dở sẽ bị xoá.`}
             </AlertDialogDescription>
@@ -902,7 +1020,7 @@ export function InterviewerBoard({
               disabled={confirm === "submit" && candidate?.department === "HCTC" && !room?.is_challenge && !debateTableId}
               onClick={confirm === "submit" ? submit : returnToQueue}
             >
-               {confirm === "submit" ? room?.is_challenge ? "Xác nhận đánh giá" : "Nộp & Kết thúc" : "Trả về phòng chờ"}
+               {confirm === "submit" ? room?.is_challenge ? "Xác nhận nhận xét" : "Nộp & Kết thúc" : "Trả về phòng chờ"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
