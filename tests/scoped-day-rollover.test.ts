@@ -5,8 +5,8 @@ import { PGlite } from "@electric-sql/pglite";
 const ADMIN = "00000000-0000-0000-0000-0000000000c1";
 const FORCE_NOTE = "Cưỡng chế kết thúc khi chuyển sang ngày 11/11/2026";
 
-describe("day-scoped forced rollover", () => {
-  it("closes only old-day applications and restores the next day's affected candidates", async () => {
+describe("day-scoped absence rollover", () => {
+  it("marks missed interviews absent, advances them day by day, and leaves next-day applicants untouched", async () => {
     const db = new PGlite();
     let phase = "bootstrap";
     try {
@@ -31,12 +31,15 @@ describe("day-scoped forced rollover", () => {
         "20261212_rollback_forced_day_rollover.sql",
         "20261213_restore_nov11_candidates.sql",
         "20261214_force_complete_only_closed_day.sql",
+        "20261215_absent_after_interview_day.sql",
       ]) {
         await db.exec(readFileSync(new URL(`../supabase/migrations/${filename}`, import.meta.url), "utf8"));
       }
       await db.query("insert into auth.users(id,email) values($1,'admin@club.local')", [ADMIN]);
       phase = "insert admin profile";
       await db.query("insert into public.profiles(id,email,role) values($1,'admin@club.local','ADMIN')", [ADMIN]);
+      await db.query(`insert into public.event_interview_days(day) values
+        (date '2026-11-10'),(date '2026-11-11'),(date '2026-11-12') on conflict do nothing`);
 
       phase = "insert candidate fixtures";
       const candidates = (await db.query<{ id: string; code: string }>(`
@@ -50,6 +53,8 @@ describe("day-scoped forced rollover", () => {
             $1||' · Trạng thái trước: Chưa đến')
         returning id,code`, [FORCE_NOTE])).rows;
       const byCode = new Map(candidates.map((candidate) => [candidate.code, candidate.id]));
+      await db.query(`insert into public.evaluations(candidate_id,comment,scores,average_score)
+        values($1,'Nhận xét chưa chấm','{}'::jsonb,null)`, [byCode.get("OLD-DAY")]);
       await db.query(`insert into public.evaluations(candidate_id,comment,scores,average_score,challenge_comment,challenge_ended_at)
         values($1,'Real first-round review','{}'::jsonb,6.6,$2,now()),
           ($3,$4,'{}'::jsonb,null,null,null)`, [
@@ -70,19 +75,36 @@ describe("day-scoped forced rollover", () => {
         "select comment,average_score from public.evaluations where candidate_id=$1", [byCode.get("RESTORE")])).rows[0])
         .toMatchObject({ comment: "Real first-round review", average_score: "6.60" });
 
-      phase = "transition to Nov 11";
+      phase = "close Nov 10 and advance eligible absences to Nov 11";
       await db.query("update public.interview_day_state set day=date '2026-11-10' where id='main'");
-      await db.exec(`set request.jwt.claim.sub='${ADMIN}'; set role authenticated`);
-      try {
-        await db.query("select public.ensure_interview_day()");
-      } finally {
-        await db.exec("reset role");
-      }
-      const states = (await db.query<{ code: string; status: string }>(`
-        select code,status::text from public.candidates where code in ('OLD-DAY','NEXT-DAY','RESTORE')`)).rows;
-      expect(states.find((row) => row.code === "OLD-DAY")?.status).toBe("COMPLETED");
+      await db.query("select public._force_complete_day_candidates(date '2026-11-10','Kết thúc ngày 10/11/2026')");
+      await db.query("update public.interview_day_state set day=date '2026-11-11' where id='main'");
+      let states = (await db.query<{ code: string; status: string; shift: string }>(`
+        select code,status::text,shift from public.candidates where code in ('OLD-DAY','NEXT-DAY','RESTORE')`)).rows;
+      expect(states.find((row) => row.code === "OLD-DAY")).toMatchObject({
+        status: "NOT_ARRIVED", shift: "11/11/2026 18:00 (ND)",
+      });
       expect(states.find((row) => row.code === "NEXT-DAY")?.status).toBe("NOT_ARRIVED");
       expect(states.find((row) => row.code === "RESTORE")?.status).toBe("CHECKED_IN");
+
+      phase = "close Nov 11 and advance absences to Nov 12";
+      await db.query("select public._force_complete_day_candidates(date '2026-11-11','Kết thúc ngày 11/11/2026')");
+      await db.query("update public.interview_day_state set day=date '2026-11-12' where id='main'");
+      states = (await db.query<{ code: string; status: string; shift: string }>(`
+        select code,status::text,shift from public.candidates where code in ('OLD-DAY','NEXT-DAY')`)).rows;
+      expect(states.every((row) => row.status === "NOT_ARRIVED" && row.shift.startsWith("12/11/2026"))).toBe(true);
+
+      phase = "leave the final missed interview absent";
+      await db.query("select public._force_complete_day_candidates(date '2026-11-12','Kết thúc ngày 12/11/2026')");
+      await db.query("update public.interview_day_state set day=date '2026-11-13' where id='main'");
+      states = (await db.query<{ code: string; status: string }>(`
+        select code,status::text from public.candidates where code in ('OLD-DAY','NEXT-DAY')`)).rows;
+      expect(states.every((row) => row.status === "ABSENT")).toBe(true);
+      expect((await db.query<{ count: string }>(`select count(*)::text as count from public.candidate_day_history
+        where candidate_id in (select id from public.candidates where code in ('OLD-DAY','NEXT-DAY'))`)).rows[0].count)
+        .toBe("5");
+      expect((await db.query(`select id from public.evaluations where candidate_id in
+        (select id from public.candidates where code in ('OLD-DAY','NEXT-DAY'))`)).rows).toHaveLength(0);
     } catch (error) {
       throw new Error(`${phase}: ${String(error)}`, { cause: error });
     } finally {
