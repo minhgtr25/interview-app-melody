@@ -475,7 +475,6 @@ export function CandidatesManager({
                   <dt className="text-muted-foreground">Thời lượng</dt><dd className="font-mono">{formatDuration(viewEval?.duration_seconds ?? viewing.duration_seconds)}</dd>
                   <dt className="text-muted-foreground">Người chấm</dt><dd>{viewEval?.interviewer_name || "—"}</dd>
                   <dt className="text-muted-foreground">Phòng - Bàn</dt><dd>{viewEval?.table_label || "—"}</dd>
-                  {candidateApplicationNote(viewing, viewEval) && <><dt className="text-muted-foreground">Ghi chú phỏng vấn</dt><dd className="whitespace-pre-wrap">{candidateApplicationNote(viewing, viewEval)}</dd></>}
                 </dl>
                 {viewEval ? (
                   <>
