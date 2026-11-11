@@ -63,13 +63,19 @@ export function AdminNav({ activeDay }: { activeDay: string | null }) {
   }
 
   return <>
-    <nav aria-label="Điều hướng quản trị" className="border-b border-border/80 bg-background/90 lg:hidden">
-      <div className="flex gap-1 overflow-x-auto px-3 py-2 [scrollbar-width:thin]">
+    <div className="app-sticky-toolbar -mx-4 px-2 py-1.5 lg:hidden">
+      <nav aria-label="Điều hướng quản trị" className="app-subtle-scrollbar flex gap-1 overflow-x-auto">
         {GROUPS.flatMap((group) => group.items.map(({ href, label, icon }) => item(href, label, icon, true)))}
-      </div>
-    </nav>
-    <aside className="hidden w-56 shrink-0 lg:block">
-      <nav aria-label="Điều hướng quản trị" className="sticky top-24 space-y-6">
+      </nav>
+      <nav aria-label="Mở màn hình vận hành" className="flex items-center gap-1 overflow-x-auto border-t border-border/70 pt-1">
+        {SHORTCUTS.map(({ href, label, icon: Icon }) => <Link key={href} href={href} target="_blank" rel="noopener noreferrer"
+          className="inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground">
+          <Icon className="size-3.5" />{label}<ExternalLink className="size-3" />
+        </Link>)}
+      </nav>
+    </div>
+    <aside className="hidden w-60 shrink-0 lg:block">
+      <nav aria-label="Điều hướng quản trị" className="sticky top-[calc(var(--app-header-height)+1rem)] space-y-6">
         {GROUPS.map((group) => <div key={group.title} className="space-y-1">
           <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{group.title}</p>
           {group.items.map(({ href, label, icon }) => item(href, label, icon, false))}
@@ -83,9 +89,5 @@ export function AdminNav({ activeDay }: { activeDay: string | null }) {
         </div>
       </nav>
     </aside>
-    <div className="flex flex-wrap gap-2 border-b bg-background px-4 py-2 lg:hidden">
-      {SHORTCUTS.map(({ href, label }) => <Link key={href} href={href} target="_blank" rel="noopener noreferrer"
-        className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground">{label}<ExternalLink className="size-3" /></Link>)}
-    </div>
   </>;
 }

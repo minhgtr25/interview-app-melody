@@ -81,8 +81,8 @@ export function RequestsManager({ initialRequests, candidates, profiles }: {
   }
 
   return <section className="space-y-5">
-    <div className="flex flex-wrap items-start justify-between gap-3 border-b pb-5">
-      <div><h1 className="text-2xl font-semibold tracking-tight">Yêu cầu</h1><p className="mt-1 text-sm text-muted-foreground">{pending} yêu cầu đang chờ · Admin và Support IT cùng xử lý</p></div>
+    <div className="app-page-heading flex-wrap">
+      <div><h1 className="text-2xl font-semibold tracking-tight sm:text-[1.75rem]">Yêu cầu</h1><p className="mt-1 text-sm text-muted-foreground">{pending} yêu cầu đang chờ · Admin và Support IT cùng xử lý</p></div>
       <div className="flex items-center gap-2">
         <label className="sr-only" htmlFor="request-status-filter">Lọc trạng thái yêu cầu</label>
         <select id="request-status-filter" className="h-9 rounded-md border bg-background px-3 text-sm" value={filter}

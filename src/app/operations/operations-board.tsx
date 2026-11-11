@@ -122,7 +122,7 @@ export function OperationsBoard({ role, staffName, initialCandidates, initialAbs
     </AppHeader>
 
     <main className="mx-auto max-w-screen-2xl space-y-5 px-3 py-5 sm:px-5 lg:px-6">
-      <div className="flex flex-wrap gap-2 border-b pb-3">
+      <div className="app-sticky-toolbar -mx-3 flex flex-wrap gap-2 px-3 py-3 sm:-mx-5 sm:px-5 lg:-mx-6 lg:px-6">
         <Button variant={view === "candidates" ? "default" : "outline"} onClick={() => setView("candidates")}>
           <UserRound /> Tất cả thí sinh ({candidates.rows.length})
         </Button>
@@ -131,7 +131,7 @@ export function OperationsBoard({ role, staffName, initialCandidates, initialAbs
         </Button>
       </div>
 
-      <div className="space-y-3 rounded-xl border bg-card p-4">
+      <div className="app-panel space-y-3 p-4">
         <div className="flex flex-wrap gap-3">
           <div className="relative min-w-60 flex-1">
             <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -160,7 +160,7 @@ export function OperationsBoard({ role, staffName, initialCandidates, initialAbs
         {view === "candidates" && <p className="text-xs text-muted-foreground" aria-live="polite">Đang hiển thị {visibleCandidateRows.length}/{candidates.rows.length + absenceHistory.rows.length} lượt phỏng vấn và lịch sử vắng</p>}
       </div>
 
-      {view === "candidates" ? <div className="overflow-x-auto rounded-xl border bg-card">
+      {view === "candidates" ? <div className="app-panel overflow-x-auto">
         <Table>
           <TableHeader><TableRow>
             <TableHead>Mã</TableHead><TableHead>MSSV</TableHead><TableHead>Họ tên</TableHead><TableHead>SĐT</TableHead>

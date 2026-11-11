@@ -666,7 +666,7 @@ export function CoordinatorBoard({
         </span>
       </AppHeader>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/80 bg-card px-4 py-2.5 text-sm shadow-sm shadow-slate-900/[0.025]">
+      <div className="app-sticky-toolbar flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm sm:gap-3 sm:px-4">
         <div className="flex flex-wrap items-center gap-2">
           <Button variant="outline" size="sm" onClick={() => setAbsenceOpen(true)}>Quản lý vắng mặt ({cand.rows.filter((item) => item.status === "ABSENT").length})</Button>
           {selectedValid && <Button variant="outline" size="sm" onClick={() => setRequestCandidate(selectedValid)}><CalendarClock /> Yêu cầu đổi lịch</Button>}
@@ -680,7 +680,7 @@ export function CoordinatorBoard({
       </div>
       {!dayReady && <p className="border-b border-amber-300 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-900">Bố trí ngày {dayState.rows[0]?.day ? dayLabel(dayState.rows[0].day) : "trước"} đã khóa. Hệ thống sẽ áp dụng bố trí ngày {dayLabel(todayInVietnam(now))} sau khi các ca cũ hoàn tất và lịch hôm nay đã được lưu.</p>}
 
-      <div className="pointer-events-none fixed inset-x-4 bottom-4 z-50 flex flex-col gap-2 sm:right-4 sm:left-auto sm:w-96" aria-live="polite">
+      <div className="pointer-events-none fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-[45] flex flex-col gap-2 sm:right-4 sm:left-auto sm:w-96" aria-live="polite">
         {alarms.map((alarm) => <div key={alarm.id} role="status" className={cn(
           "pointer-events-auto rounded-xl border border-amber-300 bg-background p-4 shadow-xl transition-opacity duration-1000",
           alarm.fading && "opacity-0"

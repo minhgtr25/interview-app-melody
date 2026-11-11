@@ -16,9 +16,10 @@ export default async function AdminRoomsPage() {
     supabase.from("interview_day_plans").select("day,rooms").order("day"),
   ]);
   return <div className="space-y-6">
-    <div className="border-b pb-5">
-      <h1 className="text-2xl font-semibold tracking-tight">Phòng & bàn</h1>
+    <div className="app-page-heading">
+      <div><h1 className="text-2xl font-semibold tracking-tight sm:text-[1.75rem]">Phòng & bàn</h1>
       <p className="mt-1 text-sm text-muted-foreground">Xem cấu hình ngày cũ và tạo phòng, bàn mới cho hôm nay.</p>
+      </div>
     </div>
     <DayRoomPlanner rooms={rooms} tables={tables} activeDay={stateResult.data?.day ?? todayInVietnam()}
       plans={(planResult.data ?? []) as InterviewDayPlan[]} />

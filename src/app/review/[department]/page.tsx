@@ -13,8 +13,8 @@ export default async function DepartmentReviewPage({ params }: { params: Promise
   if (!isDepartmentCode(value)) notFound();
   const department = DEPARTMENTS.find((item) => item.code === value)!;
   const portal = await getReviewPortal(value);
-  if (!portal?.active) return <main className="flex min-h-dvh items-center justify-center bg-muted/30 px-4">
-    <div className="max-w-md border-t-4 border-foreground bg-background p-8">
+  if (!portal?.active) return <main className="app-page flex items-center justify-center px-4 py-10">
+    <div className="app-panel w-full max-w-md border-t-4 border-t-primary p-6 sm:p-8">
       <p className="font-mono text-sm tracking-widest text-muted-foreground">{department.code} / CHỐT KẾT QUẢ</p>
       <h1 className="mt-4 text-3xl font-semibold">Cổng chấm chưa mở</h1>
       <p className="mt-3 text-muted-foreground">Admin sẽ mở link của Ban {department.name} khi bắt đầu chốt kết quả.</p>

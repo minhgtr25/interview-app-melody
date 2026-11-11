@@ -215,9 +215,9 @@ export function CandidatesManager({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-start justify-between gap-4 border-b pb-5">
+      <div className="app-page-heading flex-wrap">
         <div className="space-y-1">
-          <h2 className="text-2xl font-semibold tracking-tight">Thí sinh</h2>
+          <h2 className="text-2xl font-semibold tracking-tight sm:text-[1.75rem]">Thí sinh</h2>
           <p className="text-sm text-muted-foreground">{cand.rows.length} lượt phỏng vấn · Quản lý danh sách và dữ liệu Excel</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -228,7 +228,7 @@ export function CandidatesManager({
         </div>
       </div>
 
-      <div className="flex flex-col gap-3 rounded-xl border bg-card p-4">
+      <div className="app-panel flex flex-col gap-3 p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="text-sm font-semibold">Tìm và lọc</h3>
           <p className="text-xs text-muted-foreground" aria-live="polite">Đang hiển thị {filtered.length}/{cand.rows.length} lượt phỏng vấn</p>

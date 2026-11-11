@@ -49,9 +49,9 @@ export function WaitingDisplay({ initialCalls, initialSettings, initialTables, a
   const live = calls.status === "live" && settings.status === "live" && tables.status === "live";
 
   return (
-    <main className="min-h-dvh overflow-x-auto bg-[#101b19] text-[#f7f5ef]">
-      <div className="mx-auto flex min-h-dvh flex-col px-[clamp(24px,3vw,64px)] py-[clamp(24px,3vh,48px)]" style={{ minWidth: Math.max(880, grouped.length * 270) }}>
-        <header className="flex items-end justify-between gap-8 border-b border-[#52605a] pb-7">
+    <main className="min-h-dvh overflow-x-hidden bg-[#101b19] text-[#f7f5ef]">
+      <div className="mx-auto flex min-h-dvh w-full max-w-[1920px] flex-col px-[clamp(16px,3vw,64px)] py-[clamp(20px,3vh,48px)]">
+        <header className="sticky top-0 z-20 flex items-end justify-between gap-4 border-b border-[#52605a] bg-[#101b19]/95 pb-5 pt-2 backdrop-blur sm:gap-8 sm:pb-7">
           <div>
             <p className="mb-2 text-sm font-semibold tracking-[0.3em] text-[#c9a67b] uppercase">CLB Casting</p>
             <h1 className="text-[clamp(2.2rem,3.4vw,4.25rem)] leading-none font-semibold tracking-tight">Mời vào phỏng vấn</h1>
@@ -69,14 +69,14 @@ export function WaitingDisplay({ initialCalls, initialSettings, initialTables, a
         {grouped.length === 0 ? (
           <div className="flex flex-1 items-center justify-center text-center text-2xl text-[#b6c0b8]">Chưa chọn ban hiển thị trên màn hình TV</div>
         ) : (
-          <div className="mt-8 grid flex-1 gap-[clamp(12px,1.2vw,24px)]" style={{ gridTemplateColumns: `repeat(${grouped.length}, minmax(0, 1fr))` }}>
+          <div className="tv-department-grid mt-6 flex-1 gap-[clamp(12px,1.2vw,24px)] sm:mt-8">
           {grouped.map(({ department, entries }) => (
-            <section key={department.code} className="flex min-h-[540px] flex-col border-l border-[#52605a] pl-[clamp(12px,1.2vw,24px)] first:border-l-0 first:pl-0">
-              <div className="h-40 shrink-0 border-b border-[#52605a] pb-5">
+            <section key={department.code} className="tv-department-column flex min-h-[430px] flex-col border-t border-[#52605a] pt-4 first:border-t-0 first:pt-0 sm:min-h-[500px]">
+              <div className="min-h-28 shrink-0 border-b border-[#52605a] pb-4 sm:min-h-36 sm:pb-5">
                 <p className="mb-3 font-mono text-sm tracking-[0.25em] text-[#c9a67b]">{department.code}</p>
                 <h2 className="text-balance text-[clamp(1.5rem,1.8vw,2.25rem)] leading-tight font-semibold tracking-tight">{department.name}</h2>
               </div>
-              <ol className="grid flex-1 grid-rows-5 gap-3 py-5">
+              <ol className="grid flex-1 grid-rows-5 gap-2 py-4 sm:gap-3 sm:py-5">
                 {Array.from({ length: 5 }, (_, index) => {
                   const entry = entries[index];
                   return <li key={entry?.id ?? `empty-${index}`} className={entry

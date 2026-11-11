@@ -15,8 +15,8 @@ export function LiveIndicator({ status }: { status: RealtimeStatus }) {
   const Icon = map.icon;
   return (
     <span role="status" aria-live="polite" aria-label={map.text} title={map.text}
-      className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium", map.cls)}>
-      <Icon className={cn("size-3.5", status === "connecting" && "animate-spin")} />
+      className={cn("inline-flex min-h-8 items-center gap-1.5 rounded-full border border-current/10 px-2.5 py-1 text-xs font-medium", map.cls)}>
+      <Icon className={cn("size-3.5", status === "connecting" && "animate-spin motion-reduce:animate-none")} />
       <span className="hidden sm:inline">{map.text}</span>
     </span>
   );
@@ -36,22 +36,24 @@ export function AppHeader({
   children?: React.ReactNode;
 }) {
   return (
-    <header className="sticky top-0 z-30 border-b border-border/80 bg-background/95 shadow-sm shadow-slate-900/[0.025] backdrop-blur supports-[backdrop-filter]:bg-background/85">
-      <div className="mx-auto flex min-h-16 max-w-screen-2xl items-center gap-2 px-3 py-2 sm:gap-4 sm:px-5">
+    <header className="sticky top-0 z-40 border-b border-border/80 bg-background/95 shadow-sm shadow-slate-900/[0.025] backdrop-blur supports-[backdrop-filter]:bg-background/90">
+      <div className="mx-auto flex min-h-[var(--app-header-height)] max-w-screen-2xl items-center gap-2 px-3 py-1.5 sm:gap-4 sm:px-5">
         <div className="min-w-0 flex-1">
-          <h1 className="break-words text-sm font-semibold leading-tight tracking-tight sm:text-base">
+          <h1 className="truncate text-sm font-semibold leading-tight tracking-tight sm:text-base">
             {mobileTitle ? <><span className="sm:hidden">{mobileTitle}</span><span className="hidden sm:inline">{title}</span></> : title}
           </h1>
-          {subtitle && <p className="mt-0.5 truncate text-xs text-muted-foreground">{subtitle}</p>}
+          {subtitle && <p className="mt-0.5 truncate text-[10px] text-muted-foreground sm:text-xs">{subtitle}</p>}
         </div>
-        {children}
-        {status && <LiveIndicator status={status} />}
-        <form action={logout}>
-          <Button type="submit" variant="ghost" size="sm" aria-label="Đăng xuất">
-            <LogOut />
-            <span className="hidden sm:inline">Đăng xuất</span>
-          </Button>
-        </form>
+        <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-2">
+          {children}
+          {status && <LiveIndicator status={status} />}
+          <form action={logout}>
+            <Button type="submit" variant="ghost" size="sm" className="size-9 px-0 sm:w-auto sm:px-2.5" aria-label="Đăng xuất">
+              <LogOut />
+              <span className="hidden sm:inline">Đăng xuất</span>
+            </Button>
+          </form>
+        </div>
       </div>
     </header>
   );

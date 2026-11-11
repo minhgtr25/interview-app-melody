@@ -309,7 +309,7 @@ export function CheckinBoard({
       </AppHeader>
 
       {/* Thanh tìm kiếm + lọc: sticky dưới header */}
-      <div className="sticky top-16 z-20 border-b border-border/80 bg-background/95 shadow-sm backdrop-blur">
+      <div className="app-sticky-toolbar">
         <div className="mx-auto max-w-screen-2xl space-y-2 px-3 py-3 sm:px-4">
           <div className="grid grid-cols-2 gap-2 lg:grid-cols-[minmax(240px,1.6fr)_minmax(150px,0.9fr)_minmax(180px,1.1fr)_minmax(160px,1fr)_auto]">
             <div className="relative col-span-2 min-w-0 lg:col-span-1">
@@ -357,12 +357,12 @@ export function CheckinBoard({
         </div>
       </div>
 
-      <main className="mx-auto max-w-screen-2xl px-3 py-4 sm:px-4">
-        <div className="mb-3 grid grid-cols-2 gap-2 sm:flex">
-          <Button variant={absenceManager ? "outline" : "default"} className="w-full sm:w-auto" onClick={() => { setAbsenceManager(false); setStatusFilter(""); }}>
+      <main className="mx-auto max-w-screen-2xl px-3 py-4 sm:px-4 sm:py-5">
+        <div className="mb-4 flex flex-wrap gap-2 rounded-xl border bg-card/70 p-2">
+          <Button variant={absenceManager ? "outline" : "default"} className="flex-1 sm:flex-none" onClick={() => { setAbsenceManager(false); setStatusFilter(""); }}>
             Danh sách check-in
           </Button>
-          <Button variant={absenceManager ? "default" : "outline"} className="w-full sm:w-auto" onClick={() => { setAbsenceManager(true); setStatusFilter(""); setDay(""); setShift(""); }}>
+          <Button variant={absenceManager ? "default" : "outline"} className="flex-1 sm:flex-none" onClick={() => { setAbsenceManager(true); setStatusFilter(""); setDay(""); setShift(""); }}>
             Quản lý vắng mặt ({counts.absent})
           </Button>
         </div>
@@ -372,7 +372,7 @@ export function CheckinBoard({
         </div>
 
         {/* Large screens: table; mobile and iPad: responsive cards */}
-        <div className="hidden overflow-x-auto rounded-xl border bg-card xl:block">
+        <div className="app-panel hidden overflow-x-auto xl:block">
           <Table className="min-w-[1024px]">
             <TableHeader>
               <TableRow>

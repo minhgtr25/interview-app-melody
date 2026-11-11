@@ -17,18 +17,19 @@ export default async function LoginPage({
     error === "no-profile" ? "Tài khoản chưa được BTC phân quyền. Liên hệ Admin." : undefined;
 
   return (
-    <main className="flex min-h-dvh items-center justify-center bg-muted/40 px-4 py-10">
-      <div className="w-full max-w-sm">
-        <div className="mb-8 flex flex-col items-center gap-3 text-center">
-          <div className="flex size-12 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-            <Clapperboard className="size-6" />
+    <main className="relative flex min-h-dvh items-center justify-center overflow-hidden bg-muted/50 px-4 py-10">
+      <div aria-hidden="true" className="pointer-events-none absolute -top-40 left-1/2 size-[32rem] -translate-x-1/2 rounded-full bg-primary/5 blur-3xl" />
+      <div className="relative w-full max-w-md">
+        <div className="mb-7 flex flex-col items-center gap-3 text-center">
+          <div className="flex size-14 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-lg">
+            <Clapperboard className="size-7" />
           </div>
           <div>
             <h1 className="text-xl font-semibold">CLB Casting</h1>
             <p className="text-sm text-muted-foreground">Đăng nhập bằng tài khoản BTC cấp cho bạn</p>
           </div>
         </div>
-        <div className="rounded-xl border bg-card p-6 shadow-sm">
+        <div className="app-panel p-6 sm:p-8">
           <LoginForm initialError={initialError} />
         </div>
         <p className="mt-6 text-center text-xs text-muted-foreground">

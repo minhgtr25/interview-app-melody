@@ -26,18 +26,20 @@ export function ReviewAccessForm({ department }: { department: (typeof DEPARTMEN
     router.refresh();
   }
 
-  return <main className="grid min-h-dvh bg-[#f4f3ef] lg:grid-cols-[1fr_1.1fr]">
-    <section className="flex flex-col justify-between bg-[#162723] px-6 py-9 text-[#f7f6f0] sm:px-12 lg:px-16">
-      <p className="font-mono text-xs tracking-[0.25em] text-[#c6ab7b]">CLB CASTING / {department.code}</p>
-      <div className="py-16"><p className="mb-5 text-sm text-[#c6ab7b]">CHỐT KẾT QUẢ PHỎNG VẤN</p>
-        <h1 className="max-w-xl text-4xl font-semibold leading-tight tracking-tight sm:text-5xl">Ban {department.name}</h1>
-        <p className="mt-5 max-w-md text-[#c4cfca]">Xem phiếu chấm, lọc ứng viên và đưa ra quyết định cho Ban của bạn.</p>
+  return <main className="grid min-h-dvh bg-background lg:grid-cols-[minmax(18rem,0.82fr)_1.18fr]">
+    <section className="relative flex flex-col justify-between overflow-hidden bg-primary px-6 py-7 text-primary-foreground sm:px-10 sm:py-9 lg:min-h-dvh lg:px-14 lg:py-12">
+      <div aria-hidden="true" className="pointer-events-none absolute -right-28 -top-28 size-80 rounded-full border border-white/10" />
+      <div aria-hidden="true" className="pointer-events-none absolute -right-16 -top-16 size-56 rounded-full border border-white/10" />
+      <p className="relative font-mono text-xs tracking-[0.2em] text-white/70">CLB CASTING <span className="mx-1.5 text-white/35">/</span> {department.code}</p>
+      <div className="relative py-10 lg:py-16"><p className="mb-4 text-xs font-semibold tracking-[0.14em] text-white/65">CHỐT KẾT QUẢ PHỎNG VẤN</p>
+        <h1 className="max-w-xl text-3xl font-semibold leading-tight tracking-tight sm:text-4xl lg:text-[2.75rem]">Ban {department.name}</h1>
+        <p className="mt-4 max-w-md text-sm leading-6 text-white/75">Xem phiếu chấm, lọc ứng viên và đưa ra quyết định cho Ban của bạn.</p>
       </div>
-      <p className="text-xs text-[#a5b7ae]">Link chỉ hoạt động khi Admin mở cổng chấm.</p>
+      <p className="relative text-xs text-white/60">Link chỉ hoạt động khi Admin mở cổng chấm.</p>
     </section>
-    <section className="flex items-center justify-center px-6 py-12">
-      <form onSubmit={submit} className="w-full max-w-sm space-y-5">
-        <div className="flex size-12 items-center justify-center rounded-xl bg-[#e5e9e2] text-[#23483b]"><KeyRound className="size-6" /></div>
+    <section className="flex items-center justify-center px-5 py-10 sm:px-8 lg:px-12">
+      <form onSubmit={submit} className="app-panel w-full max-w-md space-y-5 p-6 sm:p-8">
+        <div className="flex size-11 items-center justify-center rounded-xl bg-primary/10 text-primary"><KeyRound className="size-5" /></div>
         <div><h2 className="text-2xl font-semibold tracking-tight">Nhập mã truy cập</h2>
           <p className="mt-2 text-sm text-muted-foreground">Admin cấp mã 4 chữ hoặc số riêng cho Ban {department.code}.</p></div>
         <div className="space-y-2"><label htmlFor="review-code" className="block text-sm font-medium">Mã của Ban</label>

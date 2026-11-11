@@ -144,9 +144,9 @@ export function AccountsManager({
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-start justify-between gap-4 border-b pb-5">
+      <div className="app-page-heading flex-wrap">
         <div className="space-y-1">
-          <h2 className="text-2xl font-semibold tracking-tight">Tài khoản nhân sự</h2>
+          <h2 className="text-2xl font-semibold tracking-tight sm:text-[1.75rem]">Tài khoản nhân sự</h2>
           <p className="text-sm text-muted-foreground">{profiles.length} tài khoản · Phân quyền và gán giám khảo vào bàn</p>
         </div>
         <Button
@@ -170,7 +170,7 @@ export function AccountsManager({
         </p>
       )}
 
-      <div className="flex flex-col gap-3 rounded-xl border bg-card p-4">
+      <div className="app-panel flex flex-col gap-3 p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="text-sm font-semibold">Tìm tài khoản</h3>
           <p className="text-xs text-muted-foreground" aria-live="polite">Hiển thị {sorted.length}/{profiles.length} tài khoản</p>

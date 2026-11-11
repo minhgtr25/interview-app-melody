@@ -974,8 +974,8 @@ export function InterviewerBoard({
 
       {/* Thanh hành động cố định đáy màn hình khi đang phỏng vấn */}
       {table?.status === "INTERVIEWING" && candidate && (
-        <div className="fixed inset-x-0 bottom-0 z-30 border-t bg-background/95 backdrop-blur">
-          <div className="mx-auto flex max-w-3xl items-center gap-2 px-2 py-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:gap-3 sm:px-4 sm:py-3">
+        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border/80 bg-background/95 shadow-[0_-12px_36px_-28px_oklch(0.18_0.025_255_/_0.35)] backdrop-blur supports-[backdrop-filter]:bg-background/90">
+          <div className="mx-auto flex max-w-4xl items-center gap-2 px-2 py-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:gap-3 sm:px-4 sm:py-3">
             {(!room?.is_challenge || canDirectDebate) && <Button
               variant="outline"
               className="h-12 shrink-0 px-2 sm:h-14 sm:px-3"

@@ -73,40 +73,40 @@ export function ReviewWorkspace({ department, initialRows, criteria }: {
     router.refresh();
   }
 
-  return <div className="min-h-dvh bg-[#f5f5f1] text-[#1a2621]">
-    <header className="sticky top-0 z-20 border-b border-[#cbd5cc] bg-[#f5f5f1]/95 backdrop-blur">
+  return <div className="app-page text-foreground">
+    <header className="sticky top-0 z-40 border-b bg-card/95 shadow-sm backdrop-blur">
       <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-3 sm:px-6">
-        <div className="min-w-0 flex-1"><p className="font-mono text-xs font-semibold tracking-widest text-[#60766b]">CLB CASTING / {department.code}</p>
-          <h1 className="truncate text-lg font-semibold">Chốt kết quả · {department.name}</h1></div>
+        <div className="min-w-0 flex-1"><p className="font-mono text-xs font-semibold tracking-widest text-muted-foreground">CLB CASTING <span className="mx-1 text-border">/</span> {department.code}</p>
+          <h1 className="truncate text-base font-semibold sm:text-lg">Chốt kết quả · {department.name}</h1></div>
         <Button variant="outline" size="sm" onClick={() => void leave()}><LogOut /> <span className="hidden sm:inline">Đóng phiên</span></Button>
       </div>
     </header>
-    <main className="mx-auto max-w-7xl space-y-5 px-4 py-6 sm:px-6">
-      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-[#cbd5cc] bg-[#cbd5cc] sm:grid-cols-5">
+    <main className="mx-auto max-w-[1680px] space-y-5 px-4 py-5 sm:px-6 sm:py-7">
+      <div className="app-panel grid grid-cols-2 gap-px overflow-hidden sm:grid-cols-5">
         {([ ["Đã phỏng vấn", counts.all], ["Chưa chốt", counts.unset], ["Đỗ", counts.pass],
           ["Cân nhắc", counts.consider], ["Trượt", counts.fail] ] as const).map(([label, value]) =>
-          <div key={label} className="bg-white px-4 py-3"><p className="text-xs text-[#68766c]">{label}</p>
+          <div key={label} className="bg-card px-4 py-3"><p className="text-xs text-muted-foreground">{label}</p>
             <p className="mt-1 font-mono text-2xl font-semibold tabular-nums">{value}</p></div>)}
       </div>
-      <div className="flex flex-wrap gap-2">
-        <div className="relative min-w-60 flex-1"><Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-[#657268]" />
+      <div className="app-sticky-toolbar -mx-4 flex flex-wrap gap-2 px-4 py-3 sm:-mx-6 sm:px-6">
+        <div className="relative min-w-0 flex-1 sm:min-w-60"><Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input type="search" value={query} onChange={(event) => setQuery(event.target.value)}
-            placeholder="Tìm tên, mã ứng viên hoặc ca…" className="h-10 border-[#cbd5cc] bg-white pl-9" /></div>
-        <select className="h-10 rounded-lg border border-[#cbd5cc] bg-white px-3 text-sm" value={filter}
+            placeholder="Tìm tên, mã ứng viên hoặc ca…" className="h-10 border-input bg-background pl-9" /></div>
+        <select className="h-10 max-w-full rounded-md border border-input bg-background px-3 text-sm" value={filter}
           onChange={(event) => setFilter(event.target.value as typeof filter)} aria-label="Lọc kết quả">
           <option value="ALL">Tất cả</option><option value="UNSET">Chưa chốt</option>
           <option value="PASS">Đỗ</option><option value="CONSIDER">Cân nhắc</option><option value="FAIL">Trượt</option>
         </select>
       </div>
-      <div className="overflow-hidden rounded-xl border border-[#cbd5cc] bg-white">
-        <div className="hidden grid-cols-[7rem_minmax(0,1fr)_6rem_9rem_15rem] gap-3 border-b bg-[#ecf0ea] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-[#516257] md:grid">
+      <div className="app-panel overflow-hidden">
+        <div className="hidden grid-cols-[7rem_minmax(0,1fr)_6rem_9rem_15rem] gap-3 border-b bg-muted/60 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground md:grid">
           <span>Mã</span><span>Thí sinh</span><span>Điểm</span><span>Kết quả</span><span>Chốt nhanh</span>
         </div>
-        <div className="divide-y divide-[#e0e6df]">
-          {visible.map((row) => <div key={row.id} className="grid gap-3 p-4 md:grid-cols-[7rem_minmax(0,1fr)_6rem_9rem_15rem] md:items-center">
-            <span className="font-mono text-sm text-[#56675c]">{row.code}</span>
+        <div className="divide-y divide-border">
+          {visible.map((row) => <div key={row.id} className="grid gap-3 p-4 transition-colors hover:bg-muted/20 md:grid-cols-[7rem_minmax(0,1fr)_6rem_9rem_15rem] md:items-center">
+            <span className="font-mono text-sm text-muted-foreground">{row.code}</span>
             <button type="button" onClick={() => setSelectedId(row.id)} className="min-w-0 text-left hover:underline">
-              <span className="block font-semibold">{row.full_name}</span><span className="text-xs text-[#69766c]">{row.shift || "Không có ca"} · Xem phiếu chấm</span>
+              <span className="block font-semibold">{row.full_name}</span><span className="text-xs text-muted-foreground">{row.shift || "Không có ca"} · Xem phiếu chấm</span>
             </button>
             <span className="font-mono text-lg font-semibold tabular-nums">{row.evaluation?.average_score == null ? "—" : Number(row.evaluation.average_score).toFixed(2)}</span>
             <span className="text-sm font-medium">{row.decision ? CHOICES.find((choice) => choice.value === row.decision?.decision)?.label : "Chưa chốt"}</span>
@@ -115,12 +115,12 @@ export function ReviewWorkspace({ department, initialRows, criteria }: {
                 onClick={() => void decide(row, choice.value)} title={choice.label}
                 aria-label={`${choice.label}: ${row.full_name}`} aria-pressed={row.decision?.decision === choice.value}
                 className={`inline-flex h-9 flex-1 items-center justify-center gap-1 rounded-md border text-xs font-medium transition-colors disabled:opacity-50 ${
-                  row.decision?.decision === choice.value ? choice.className : "border-[#cbd5cc] bg-white hover:bg-[#edf1ec]"}`}>
+                  row.decision?.decision === choice.value ? choice.className : "border-border bg-background hover:bg-muted"}`}>
                 <choice.icon className="size-4" /><span className="sr-only sm:not-sr-only">{choice.label}</span>
               </button>)}
             </div>
           </div>)}
-          {visible.length === 0 && <p className="px-4 py-16 text-center text-sm text-[#68766c]">Không có thí sinh phù hợp bộ lọc.</p>}
+          {visible.length === 0 && <p className="px-4 py-16 text-center text-sm text-muted-foreground">Không có thí sinh phù hợp bộ lọc.</p>}
         </div>
       </div>
     </main>
