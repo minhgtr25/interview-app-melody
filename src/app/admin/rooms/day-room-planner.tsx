@@ -64,7 +64,7 @@ export function DayRoomPlanner({ rooms, tables, activeDay, plans }: {
     const { error } = await createClient().rpc("activate_interview_day", { p_day: today });
     setBusy(false);
     if (error) return toast.error(errorMessage(error));
-    toast.success(`Đã lưu cấu hình cũ và mở ngày ${dayLabel(today)} với danh sách bàn trống`);
+    toast.success(`Đã cưỡng chế hoàn thành các thí sinh còn lại và mở ngày ${dayLabel(today)}`);
     router.refresh();
   }
 
@@ -73,7 +73,7 @@ export function DayRoomPlanner({ rooms, tables, activeDay, plans }: {
     const { error } = await createClient().rpc("reset_today_interview_rooms");
     setBusy(false);
     if (error) return toast.error(errorMessage(error));
-    toast.success("Đã lưu cấu hình hiện tại và dọn toàn bộ phòng/bàn để tạo lại");
+    toast.success("Đã cưỡng chế hoàn thành các thí sinh còn lại và dọn phòng/bàn");
     router.refresh();
   }
 
@@ -82,7 +82,7 @@ export function DayRoomPlanner({ rooms, tables, activeDay, plans }: {
       <CalendarDays className="size-5 text-muted-foreground" />
       <div className="mr-auto">
         <h2 className="font-semibold">Cấu hình theo ngày</h2>
-        <p className="text-sm text-muted-foreground">Cấu hình ngày cũ được lưu lại. Ngày mới bắt đầu với danh sách phòng và bàn trống.</p>
+        <p className="text-sm text-muted-foreground">Khi đổi ngày, hồ sơ chưa xong được ghi “Cưỡng chế”; cấu hình cũ được lưu và bàn mới bắt đầu trống.</p>
       </div>
       <select className="h-9 rounded-lg border border-input bg-background px-3 text-sm" value={selectedDay}
         onChange={(event) => setSelectedDay(event.target.value)} aria-label="Xem cấu hình ngày">
@@ -91,20 +91,20 @@ export function DayRoomPlanner({ rooms, tables, activeDay, plans }: {
       </select>
     </div>
     {activeDay < today && <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
-      <p>Chưa chuyển sang ngày {dayLabel(today)}. Hoàn tất các ca còn ở bàn rồi thử lại.</p>
+      <p>Chưa chuyển sang ngày {dayLabel(today)}. Các thí sinh chưa xong sẽ được cưỡng chế hoàn thành khi chuyển.</p>
       <Button size="sm" variant="outline" disabled={busy} onClick={() => void retryRollover()}>
         {busy && <Loader2 className="animate-spin" />} Chuyển sang hôm nay
       </Button>
     </div>}
     {selectedDay === activeDay && activeDay === today && currentRooms.length > 0 && <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-muted/50 p-3 text-sm">
-      <p>Muốn tạo lại từ đầu? Cấu hình này sẽ được lưu trước khi dọn phòng và bàn.</p>
+      <p>Muốn tạo lại từ đầu? Các thí sinh chưa xong sẽ được ghi “Cưỡng chế”.</p>
       <AlertDialog>
         <AlertDialogTrigger render={<Button size="sm" variant="outline" disabled={busy} />}>Lưu và tạo lại từ đầu</AlertDialogTrigger>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Đặt lại phòng và bàn hôm nay?</AlertDialogTitle>
             <AlertDialogDescription>
-              Hệ thống lưu bản chụp cấu hình hiện tại, ẩn toàn bộ phòng/bàn cũ và tháo tài khoản giám khảo để bạn gán lại. Lịch sử chấm và trao đổi vẫn được giữ.
+              Hệ thống ghi “Cưỡng chế” và hoàn thành tất cả thí sinh chưa xong, đóng ca và yêu cầu còn chờ, rồi lưu cấu hình trước khi dọn bàn. Lịch sử chấm và trao đổi vẫn được giữ.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
