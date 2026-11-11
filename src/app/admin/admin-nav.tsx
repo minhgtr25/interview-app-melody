@@ -54,8 +54,8 @@ export function AdminNav({ activeDay }: { activeDay: string | null }) {
     const selected = href === "/admin" ? pathname === "/admin" : pathname.startsWith(href);
     return <Link key={href} href={href} aria-current={selected ? "page" : undefined}
       className={cn("inline-flex items-center gap-2.5 rounded-lg text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-primary",
-        mobile ? "shrink-0 px-3 py-2" : "w-full px-3 py-2.5",
-        selected ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground")}>
+        mobile ? "min-h-10 shrink-0 px-3 py-2" : "w-full px-3 py-2.5",
+        selected ? "bg-primary/10 text-primary ring-1 ring-primary/10" : "text-muted-foreground hover:bg-muted hover:text-foreground")}>
       <Icon className="size-4 shrink-0" aria-hidden="true" />
       <span>{label}</span>
       {href === "/admin/requests" && pendingRequests > 0 && <span className="ml-auto min-w-5 rounded-full bg-red-600 px-1.5 py-0.5 text-center text-[10px] font-bold leading-none text-white" aria-label={pendingRequests + " yêu cầu chưa xử lý"}>{pendingRequests}</span>}
@@ -63,13 +63,13 @@ export function AdminNav({ activeDay }: { activeDay: string | null }) {
   }
 
   return <>
-    <nav aria-label="Điều hướng quản trị" className="border-b bg-background lg:hidden">
-      <div className="flex gap-1 overflow-x-auto px-3 py-2">
+    <nav aria-label="Điều hướng quản trị" className="border-b border-border/80 bg-background/90 lg:hidden">
+      <div className="flex gap-1 overflow-x-auto px-3 py-2 [scrollbar-width:thin]">
         {GROUPS.flatMap((group) => group.items.map(({ href, label, icon }) => item(href, label, icon, true)))}
       </div>
     </nav>
     <aside className="hidden w-56 shrink-0 lg:block">
-      <nav aria-label="Điều hướng quản trị" className="sticky top-20 space-y-6">
+      <nav aria-label="Điều hướng quản trị" className="sticky top-24 space-y-6">
         {GROUPS.map((group) => <div key={group.title} className="space-y-1">
           <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{group.title}</p>
           {group.items.map(({ href, label, icon }) => item(href, label, icon, false))}

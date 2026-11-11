@@ -116,12 +116,12 @@ export function OperationsBoard({ role, staffName, initialCandidates, initialAbs
   const status = [candidates.status, absenceHistory.status, evaluations.status, tables.status, rooms.status].includes("offline") ? "offline"
     : [candidates.status, absenceHistory.status, evaluations.status, tables.status, rooms.status].every((item) => item === "live") ? "live" : "connecting";
 
-  return <div className="min-h-dvh bg-muted/30">
+  return <div className="min-h-dvh bg-background">
     <AppHeader title="Tra cứu thí sinh & quản lý bàn" subtitle={staffName} status={status}>
       <Link className={buttonVariants({ variant: "outline", size: "sm" })} href={role === "COORDINATOR" || role === "SUPPORT_IT" ? "/coordinator" : "/admin"}><ArrowLeft /> Quay lại</Link>
     </AppHeader>
 
-    <main className="mx-auto max-w-screen-2xl space-y-5 px-4 py-5">
+    <main className="mx-auto max-w-screen-2xl space-y-5 px-3 py-5 sm:px-5 lg:px-6">
       <div className="flex flex-wrap gap-2 border-b pb-3">
         <Button variant={view === "candidates" ? "default" : "outline"} onClick={() => setView("candidates")}>
           <UserRound /> Tất cả thí sinh ({candidates.rows.length})

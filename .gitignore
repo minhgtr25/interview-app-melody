@@ -48,3 +48,9 @@ next-env.d.ts
 
 # local database schema and migrations
 /supabase/
+
+# Keep the reviewed project-local UI skills and their lockfile in source control.
+!/.agents/
+!/.agents/skills/
+!/.agents/skills/**/
+!/.agents/skills/**/SKILL.md

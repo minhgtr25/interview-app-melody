@@ -36,13 +36,13 @@ export function AppHeader({
   children?: React.ReactNode;
 }) {
   return (
-    <header className="sticky top-0 z-30 border-b bg-background/95 backdrop-blur">
-      <div className="mx-auto flex min-h-14 max-w-screen-2xl items-center gap-2 px-2 py-2 sm:gap-3 sm:px-4">
+    <header className="sticky top-0 z-30 border-b border-border/80 bg-background/95 shadow-sm shadow-slate-900/[0.025] backdrop-blur supports-[backdrop-filter]:bg-background/85">
+      <div className="mx-auto flex min-h-16 max-w-screen-2xl items-center gap-2 px-3 py-2 sm:gap-4 sm:px-5">
         <div className="min-w-0 flex-1">
-          <h1 className="break-words text-sm font-semibold leading-tight sm:text-base">
+          <h1 className="break-words text-sm font-semibold leading-tight tracking-tight sm:text-base">
             {mobileTitle ? <><span className="sm:hidden">{mobileTitle}</span><span className="hidden sm:inline">{title}</span></> : title}
           </h1>
-          {subtitle && <p className="truncate text-xs text-muted-foreground">{subtitle}</p>}
+          {subtitle && <p className="mt-0.5 truncate text-xs text-muted-foreground">{subtitle}</p>}
         </div>
         {children}
         {status && <LiveIndicator status={status} />}

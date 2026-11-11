@@ -114,9 +114,9 @@ export function Dashboard({
         <LiveIndicator status={status} />
       </div>
 
-      <div className="grid grid-cols-2 gap-2 rounded-xl border bg-card p-2 sm:grid-cols-3 xl:grid-cols-5">
+      <div className="grid grid-cols-2 gap-2 rounded-2xl border border-border/80 bg-card p-2.5 shadow-sm shadow-slate-900/[0.025] sm:grid-cols-3 xl:grid-cols-5">
         {CARDS.map(({ key, label, icon: Icon, text }) => (
-          <div key={key} className="rounded-lg p-3.5 hover:bg-muted/50">
+          <div key={key} className="rounded-xl p-3.5 transition-colors hover:bg-muted/60">
             <div className="flex items-center justify-between">
               <span className="text-xs font-medium text-muted-foreground">{label}</span>
               <Icon className={cn("size-4", text)} />
@@ -130,7 +130,7 @@ export function Dashboard({
       </div>
 
       {/* Thanh tiến độ tổng */}
-      <div className="rounded-xl border bg-card p-5">
+      <div className="rounded-2xl border border-border/80 bg-card p-5 shadow-sm shadow-slate-900/[0.025]">
         <p className="mb-3 text-sm font-semibold">Tiến độ tổng</p>
         <div className="flex h-4 w-full overflow-hidden rounded-full bg-muted" role="img" aria-label="Biểu đồ tiến độ theo trạng thái">
           {CARDS.map(({ key, bar }) =>
@@ -156,7 +156,7 @@ export function Dashboard({
 
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Theo ban */}
-        <div className="rounded-xl border bg-card p-5">
+        <div className="rounded-2xl border border-border/80 bg-card p-5 shadow-sm shadow-slate-900/[0.025]">
           <p className="mb-4 text-sm font-semibold">Theo ban ứng tuyển</p>
           <div className="space-y-3">
             {byDept.map(([dept, row]) => (
@@ -181,7 +181,7 @@ export function Dashboard({
         </div>
 
         {/* Bàn đang hoạt động */}
-        <div className="rounded-xl border bg-card p-5">
+        <div className="rounded-2xl border border-border/80 bg-card p-5 shadow-sm shadow-slate-900/[0.025]">
           <p className="mb-4 text-sm font-semibold">
             Bàn đang hoạt động ({busyTables.length}/{tbl.rows.length})
           </p>
@@ -209,7 +209,7 @@ export function Dashboard({
           </ul>
         </div>
       </div>
-      <details className="rounded-xl border bg-card">
+      <details className="rounded-2xl border border-border/80 bg-card shadow-sm shadow-slate-900/[0.025]">
         <summary className="cursor-pointer list-none p-4 marker:hidden">
           <span className="block text-sm font-semibold">Truy cập trực tiếp bàn giám khảo</span>
           <span className="mt-1 block text-xs text-muted-foreground">Mở giao diện từng bàn bằng quyền Admin/Support IT · {tbl.rows.length} bàn</span>

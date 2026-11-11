@@ -562,7 +562,7 @@ export function InterviewerBoard({
   const cvUrl = safeUrl(candidate?.cv_url);
 
   return (
-    <div className="min-h-dvh bg-muted/30">
+    <div className="min-h-dvh bg-background">
       <AppHeader title={tableLabel} mobileTitle={mobileTableLabel} subtitle={interviewerName} status={status}>
         {adminPreview && <Link href="/admin/rooms" className="inline-flex h-9 shrink-0 items-center rounded-md border px-2 text-xs font-medium hover:bg-muted sm:px-3 sm:text-sm">Quản trị</Link>}
         {adminPreview && table && (table.status === "ASSIGNED" || table.status === "INTERVIEWING") && <Button variant="destructive" size="sm" className="h-9 shrink-0 px-2 sm:px-3" onClick={() => { setAdminForceNote(""); setAdminForceOpen(true); }}>

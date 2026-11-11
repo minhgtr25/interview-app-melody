@@ -1,0 +1,61 @@
+{
+  "version": 2,
+  "skills": {
+    "safe-dashboard-ui-reviewer": {
+      "source": "sethankuadibi/seth-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/safe-dashboard-ui-reviewer/SKILL.md",
+      "computedHash": "cf042628ae39629bd7ca473ea86de88ead252e26695c7e67cfef55429933489a",
+      "installMode": "copy"
+    },
+    "safe-design-system-reviewer": {
+      "source": "sethankuadibi/seth-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/safe-design-system-reviewer/SKILL.md",
+      "computedHash": "ba34dfb6f0224548370206d900f5caf5ec982c0f09b208418ee137320bfdeaf7",
+      "installMode": "copy"
+    },
+    "safe-form-ux-reviewer": {
+      "source": "sethankuadibi/seth-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/safe-form-ux-reviewer/SKILL.md",
+      "computedHash": "c103e1e5339865679924fc33da5084812fe946f2aa898d4b96f05ac7979b091c",
+      "installMode": "copy"
+    },
+    "safe-frontend-accessibility-reviewer": {
+      "source": "sethankuadibi/seth-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/safe-frontend-accessibility-reviewer/SKILL.md",
+      "computedHash": "838c485c81052a30fddcf5d11393a63171ebe5d98e834c27e94e57c6ea61c228",
+      "installMode": "copy"
+    },
+    "safe-frontend-ui-reviewer": {
+      "source": "sethankuadibi/seth-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/safe-frontend-ui-reviewer/SKILL.md",
+      "computedHash": "e556ec4ca019bbd6fc997186ad719fcccd638c3f75b70eae704445939aa4ce98",
+      "installMode": "copy"
+    },
+    "safe-mobile-layout-reviewer": {
+      "source": "sethankuadibi/seth-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/safe-mobile-layout-reviewer/SKILL.md",
+      "computedHash": "553efe0cb05e8ef6fe0a92512c195a28df77fc0b51e37e2bce42166328306253",
+      "installMode": "copy"
+    },
+    "safe-navigation-flow-reviewer": {
+      "source": "sethankuadibi/seth-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/safe-navigation-flow-reviewer/SKILL.md",
+      "computedHash": "3c4f9134d0dbf2f20b2f8ed7e63ea1e93299568aba2cfb85d503b03518a93c6d",
+      "installMode": "copy"
+    },
+    "safe-table-data-ui-reviewer": {
+      "source": "sethankuadibi/seth-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/safe-table-data-ui-reviewer/SKILL.md",
+      "computedHash": "b00de994428c192ef8cfbee2c321312e90f5975637c7230de00438d23f3f5811",
+      "installMode": "copy"
+    }
+  }
+}

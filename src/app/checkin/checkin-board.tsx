@@ -301,7 +301,7 @@ export function CheckinBoard({
   }
 
   return (
-    <div className="min-h-dvh bg-muted/30">
+    <div className="min-h-dvh bg-background">
       <AppHeader title="Bàn tiếp đón · Check-in" mobileTitle="Check-in" subtitle={staffName} status={status}>
         <span className="hidden rounded-full bg-muted px-3 py-1 text-xs font-medium tabular-nums lg:inline">
           Đã đến {counts.arrived}/{counts.total}
@@ -309,7 +309,7 @@ export function CheckinBoard({
       </AppHeader>
 
       {/* Thanh tìm kiếm + lọc: sticky dưới header */}
-      <div className="sticky top-14 z-20 border-b bg-background/95 shadow-sm backdrop-blur">
+      <div className="sticky top-16 z-20 border-b border-border/80 bg-background/95 shadow-sm backdrop-blur">
         <div className="mx-auto max-w-screen-2xl space-y-2 px-3 py-3 sm:px-4">
           <div className="grid grid-cols-2 gap-2 lg:grid-cols-[minmax(240px,1.6fr)_minmax(150px,0.9fr)_minmax(180px,1.1fr)_minmax(160px,1fr)_auto]">
             <div className="relative col-span-2 min-w-0 lg:col-span-1">

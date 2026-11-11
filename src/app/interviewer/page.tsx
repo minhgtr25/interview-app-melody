@@ -16,7 +16,7 @@ export default async function InterviewerPage() {
 
   if (!profile.table_id) {
     return (
-      <div className="min-h-dvh bg-muted/30">
+      <div className="min-h-dvh bg-background">
         <AppHeader title="Giám khảo" subtitle={name} />
         <main className="mx-auto max-w-md px-4 py-16 text-center">
           <p className="text-lg font-semibold">Bạn chưa được phân bàn</p>
