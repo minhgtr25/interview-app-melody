@@ -4,7 +4,7 @@ import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { RealtimeChannel, RealtimePostgresChangesPayload } from "@supabase/supabase-js";
 import { toast } from "sonner";
-import { GripVertical, Loader2, UserX, Undo2, ArrowRightLeft, CircleCheck, Timer, Hourglass, MessageCircle, X, BellRing, Search, ClipboardList, Pause, CalendarClock, RotateCcw } from "lucide-react";
+import { GripVertical, Loader2, UserX, Undo2, ArrowRightLeft, CircleCheck, Timer, Hourglass, MessageCircle, X, BellRing, Search, ClipboardList, Pause, CalendarClock, RotateCcw, Settings2 } from "lucide-react";
 import { AppHeader } from "@/components/app-header";
 import { Elapsed, useServerNow } from "@/components/clock";
 import { Button } from "@/components/ui/button";
@@ -27,7 +27,7 @@ import { useRealtimeRows } from "@/hooks/use-realtime-rows";
 import { useOpsChannel } from "@/hooks/use-ops-channel";
 import { createClient, prepareRealtime } from "@/lib/supabase/client";
 import { errorMessage, normalizeText } from "@/lib/format";
-import type { Candidate, InterviewTable, OpsMessage, Profile, Room } from "@/lib/types";
+import type { Candidate, DisplaySettings, InterviewTable, OpsMessage, Profile, Room } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { DEPARTMENTS } from "@/lib/departments";
 import { isSpecializationForDepartment, isSpecializedDepartment, specializationLabel, SPECIALIZATIONS_BY_DEPARTMENT } from "@/lib/specializations";
@@ -51,6 +51,7 @@ export function CoordinatorBoard({
   initialTables,
   rooms,
   profiles,
+  initialDisplaySettings,
   staffName,
   selfId,
   chatIdentity,
@@ -60,6 +61,7 @@ export function CoordinatorBoard({
   initialTables: InterviewTable[];
   rooms: Room[];
   profiles: Profile[];
+  initialDisplaySettings: DisplaySettings[];
   staffName: string;
   selfId: string;
   chatIdentity: "coordinator" | "support";
@@ -69,6 +71,7 @@ export function CoordinatorBoard({
   const tbl = useRealtimeRows<InterviewTable>("tables", initialTables, "sort_order");
   const roomRows = useRealtimeRows<Room>("rooms", rooms, "sort_order");
   const profileRows = useRealtimeRows<Profile>("profiles", profiles);
+  const displaySettings = useRealtimeRows<DisplaySettings>("display_settings", initialDisplaySettings, "id");
   const dayState = useRealtimeRows<{ id: string; day: string }>("interview_day_state", initialDayState, "day");
   const now = useServerNow(30_000);
   const today = todayInVietnam(now);
@@ -85,6 +88,9 @@ export function CoordinatorBoard({
   const [busy, setBusy] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<Confirm>(null);
   const [absenceOpen, setAbsenceOpen] = useState(false);
+  const [tvConfigOpen, setTvConfigOpen] = useState(false);
+  const [tvDepartmentDraft, setTvDepartmentDraft] = useState<DepartmentCode[]>([]);
+  const [tvSaving, setTvSaving] = useState(false);
   const [markAbsentCandidate, setMarkAbsentCandidate] = useState<Candidate | null>(null);
   const [markAbsentNote, setMarkAbsentNote] = useState("");
   const [requestCandidate, setRequestCandidate] = useState<Candidate | null>(null);
@@ -248,6 +254,33 @@ export function CoordinatorBoard({
     return null;
   }
   const freeCount = dayReady ? tbl.rows.filter((t) => t.status === "AVAILABLE" && !t.is_paused && roomById.get(t.room_id)?.is_configured && !roomById.get(t.room_id)?.is_challenge && !tableConfigurationIssue(t)).length : 0;
+  const visibleTvDepartments = displaySettings.rows.find((item) => item.id === "main")?.visible_departments
+    ?? DEPARTMENTS.map((department) => department.code);
+
+  function openTvConfig() {
+    setTvDepartmentDraft([...visibleTvDepartments]);
+    setTvConfigOpen(true);
+  }
+
+  function toggleTvDepartment(department: DepartmentCode) {
+    setTvDepartmentDraft((current) => current.includes(department)
+      ? current.filter((code) => code !== department)
+      : DEPARTMENTS.map((item) => item.code).filter((code) => code === department || current.includes(code)));
+  }
+
+  async function saveTvConfig() {
+    setTvSaving(true);
+    const { data, error } = await createClient().from("display_settings")
+      .update({ visible_departments: tvDepartmentDraft })
+      .eq("id", "main")
+      .select("id,visible_departments")
+      .single();
+    setTvSaving(false);
+    if (error || !data) return toast.error(errorMessage(error ?? new Error("Không lưu được cấu hình TV")));
+    displaySettings.patchRow("main", { visible_departments: data.visible_departments as DepartmentCode[] });
+    setTvConfigOpen(false);
+    toast.success("Đã cập nhật các ban hiển thị trên TV");
+  }
   const selected = selectedId ? candById.get(selectedId) : undefined;
   // Bỏ chọn nếu thí sinh đã rời hàng chờ (do người khác gán)
   const selectedValid = selected && queue.some((candidate) => candidate.id === selected.id) ? selected : undefined;
@@ -635,13 +668,15 @@ export function CoordinatorBoard({
 
       <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-background px-4 py-2 text-sm">
         <div className="flex flex-wrap items-center gap-2">
-          <p className="text-sm text-muted-foreground">Màn hình TV hiển thị họ tên thí sinh</p>
           <Button variant="outline" size="sm" onClick={() => setAbsenceOpen(true)}>Quản lý vắng mặt ({cand.rows.filter((item) => item.status === "ABSENT").length})</Button>
           {selectedValid && <Button variant="outline" size="sm" onClick={() => setRequestCandidate(selectedValid)}><CalendarClock /> Yêu cầu đổi lịch</Button>}
         </div>
-        <a href="/display" target="_blank" rel="noopener noreferrer" className="inline-flex min-h-9 items-center rounded-md border border-primary bg-primary px-4 font-semibold text-primary-foreground hover:bg-primary/90 active:scale-[0.98]">
-          Mở màn hình chờ trên tab mới
-        </a>
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+          <Button variant="outline" size="sm" onClick={openTvConfig}><Settings2 /> Cấu hình TV · {visibleTvDepartments.length} ban</Button>
+          <a href="/display" target="_blank" rel="noopener noreferrer" className="inline-flex min-h-9 items-center rounded-md border border-primary bg-primary px-4 font-semibold text-primary-foreground hover:bg-primary/90 active:scale-[0.98]">
+            Mở màn hình chờ trên tab mới
+          </a>
+        </div>
       </div>
       {!dayReady && <p className="border-b border-amber-300 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-900">Bố trí ngày {dayState.rows[0]?.day ? dayLabel(dayState.rows[0].day) : "trước"} đã khóa. Hệ thống sẽ áp dụng bố trí ngày {dayLabel(todayInVietnam(now))} sau khi các ca cũ hoàn tất và lịch hôm nay đã được lưu.</p>}
 
@@ -666,6 +701,31 @@ export function CoordinatorBoard({
         <DialogContent className="sm:max-w-lg">
           <DialogHeader><DialogTitle>Chat · {roomById.get(tbl.rows.find((table) => table.id === chatTableId)?.room_id ?? "")?.name} - {tbl.rows.find((table) => table.id === chatTableId)?.name}</DialogTitle></DialogHeader>
           {chatTableId && <OpsChat key={chatTableId} tableId={chatTableId} selfId={selfId} role={chatIdentity} />}
+        </DialogContent>
+      </Dialog>
+      <Dialog open={tvConfigOpen} onOpenChange={setTvConfigOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Ban hiển thị trên TV</DialogTitle>
+            <p className="text-sm text-muted-foreground">Tắt ban không phỏng vấn để các ban còn lại có thêm không gian. Màn hình TV cập nhật ngay sau khi lưu.</p>
+          </DialogHeader>
+          <div className="grid gap-2">
+            {DEPARTMENTS.map((department) => {
+              const enabled = tvDepartmentDraft.includes(department.code);
+              return <button key={department.code} type="button" role="switch" aria-checked={enabled}
+                onClick={() => toggleTvDepartment(department.code)}
+                className="flex min-h-12 items-center justify-between gap-3 rounded-lg border px-3 text-left hover:bg-muted/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
+                <span className="font-medium">{department.name} <span className="font-mono text-xs text-muted-foreground">{department.code}</span></span>
+                <span aria-hidden="true" className={cn("flex h-6 w-11 shrink-0 items-center rounded-full p-0.5 transition-colors", enabled ? "bg-primary" : "bg-muted-foreground/30")}>
+                  <span className={cn("size-5 rounded-full bg-white shadow-sm transition-transform", enabled && "translate-x-5")} />
+                </span>
+              </button>;
+            })}
+          </div>
+          <p className="text-xs text-muted-foreground">Đang chọn {tvDepartmentDraft.length}/{DEPARTMENTS.length} ban</p>
+          <Button onClick={() => void saveTvConfig()} disabled={tvSaving} className="w-full">
+            {tvSaving && <Loader2 className="animate-spin" />} Lưu cấu hình TV
+          </Button>
         </DialogContent>
       </Dialog>
       <AbsenceManagerDialog open={absenceOpen} onClose={() => setAbsenceOpen(false)} candidates={cand.rows} onChanged={() => void cand.refetch()} />

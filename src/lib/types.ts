@@ -72,6 +72,7 @@ export interface DisplayCall {
 export interface DisplaySettings {
   id: string;
   identity_mode: "NAME" | "CODE";
+  visible_departments: import("@/lib/departments").DepartmentCode[];
 }
 
 export interface Candidate {

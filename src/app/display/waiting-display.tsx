@@ -21,7 +21,10 @@ export function WaitingDisplay({ initialCalls, initialSettings, initialTables }:
     setNow(new Date());
     const timer = window.setInterval(() => setNow(new Date()), 1000);
     const refresh = window.setInterval(() => {
-      if (document.visibilityState === "visible") void refetchCalls();
+      if (document.visibilityState === "visible") {
+        void refetchCalls();
+        void refetchSettings();
+      }
     }, 3000);
     // Close the gap between server render and the Realtime subscriptions.
     void refetchCalls();
@@ -30,19 +33,21 @@ export function WaitingDisplay({ initialCalls, initialSettings, initialTables }:
   }, [refetchCalls, refetchSettings]);
 
   const tableNames = useMemo(() => new Map(tables.rows.map((table) => [table.id, table.name])), [tables.rows]);
-  const grouped = useMemo(() => DEPARTMENTS.map((department) => ({
+  const visibleDepartments = useMemo(() => settings.rows.find((item) => item.id === "main")?.visible_departments
+    ?? DEPARTMENTS.map((department) => department.code), [settings.rows]);
+  const grouped = useMemo(() => DEPARTMENTS.filter((department) => visibleDepartments.includes(department.code)).map((department) => ({
     department,
     entries: calls.rows
       .filter((call) => call.department === department.code)
       .sort((a, b) => b.called_at.localeCompare(a.called_at) || b.id.localeCompare(a.id))
       .slice(0, 5),
-  })), [calls.rows]);
+  })), [calls.rows, visibleDepartments]);
 
   const live = calls.status === "live" && settings.status === "live" && tables.status === "live";
 
   return (
     <main className="min-h-dvh overflow-x-auto bg-[#101b19] text-[#f7f5ef]">
-      <div className="mx-auto flex min-h-dvh min-w-[1440px] flex-col px-[clamp(24px,3vw,64px)] py-[clamp(24px,3vh,48px)]">
+      <div className="mx-auto flex min-h-dvh flex-col px-[clamp(24px,3vw,64px)] py-[clamp(24px,3vh,48px)]" style={{ minWidth: Math.max(880, grouped.length * 270) }}>
         <header className="flex items-end justify-between gap-8 border-b border-[#52605a] pb-7">
           <div>
             <p className="mb-2 text-sm font-semibold tracking-[0.3em] text-[#c9a67b] uppercase">CLB Casting</p>
@@ -58,7 +63,10 @@ export function WaitingDisplay({ initialCalls, initialSettings, initialTables }:
           </div>
         </header>
 
-        <div className="mt-8 grid flex-1 grid-cols-6 gap-[clamp(12px,1.2vw,24px)]">
+        {grouped.length === 0 ? (
+          <div className="flex flex-1 items-center justify-center text-center text-2xl text-[#b6c0b8]">Chưa chọn ban hiển thị trên màn hình TV</div>
+        ) : (
+          <div className="mt-8 grid flex-1 gap-[clamp(12px,1.2vw,24px)]" style={{ gridTemplateColumns: `repeat(${grouped.length}, minmax(0, 1fr))` }}>
           {grouped.map(({ department, entries }) => (
             <section key={department.code} className="flex min-h-[540px] flex-col border-l border-[#52605a] pl-[clamp(12px,1.2vw,24px)] first:border-l-0 first:pl-0">
               <div className="h-40 shrink-0 border-b border-[#52605a] pb-5">
@@ -89,7 +97,8 @@ export function WaitingDisplay({ initialCalls, initialSettings, initialTables }:
               <p className="border-t border-[#52605a] pt-4 text-right font-mono text-sm text-[#b6c0b8]">{entries.length}/5</p>
             </section>
           ))}
-        </div>
+          </div>
+        )}
       </div>
     </main>
   );
