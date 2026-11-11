@@ -82,7 +82,7 @@ export function DayRoomPlanner({ rooms, tables, activeDay, plans }: {
       <CalendarDays className="size-5 text-muted-foreground" />
       <div className="mr-auto">
         <h2 className="font-semibold">Cấu hình theo ngày</h2>
-        <p className="text-sm text-muted-foreground">Cấu hình ngày cũ được lưu lại. Ngày mới bắt đầu với danh sách phòng và bàn trống.</p>
+        <p className="text-sm text-muted-foreground">Hồ sơ chưa xong của ngày cũ được ghi “Cưỡng chế”; thí sinh có lịch ngày mới giữ nguyên trạng thái.</p>
       </div>
       <select className="h-9 rounded-lg border border-input bg-background px-3 text-sm" value={selectedDay}
         onChange={(event) => setSelectedDay(event.target.value)} aria-label="Xem cấu hình ngày">
@@ -91,7 +91,7 @@ export function DayRoomPlanner({ rooms, tables, activeDay, plans }: {
       </select>
     </div>
     {activeDay < today && <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
-      <p>Chưa chuyển sang ngày {dayLabel(today)}. Hoàn tất các ca còn ở bàn rồi thử lại.</p>
+      <p>Chuyển ngày sẽ kết thúc các hồ sơ còn mở thuộc ngày cũ; thí sinh có lịch ngày mới vẫn giữ nguyên trạng thái.</p>
       <Button size="sm" variant="outline" disabled={busy} onClick={() => void retryRollover()}>
         {busy && <Loader2 className="animate-spin" />} Chuyển sang hôm nay
       </Button>
