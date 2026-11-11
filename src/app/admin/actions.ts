@@ -63,7 +63,13 @@ export async function createTableAccount(tableId: string): Promise<ActionResult<
     if (tableError || !table) throw tableError ?? new Error("Không tìm thấy bàn");
     const { data: room, error: roomError } = await admin.from("rooms").select("name,is_challenge").eq("id", table.room_id).single();
     if (roomError || !room) throw roomError ?? new Error("Không tìm thấy phòng");
-    const email = interviewerEmail(room.name, table.name);
+    const baseEmail = interviewerEmail(room.name, table.name);
+    const { data: priorAccount, error: priorAccountError } = await admin.from("profiles")
+      .select("id").eq("email", baseEmail).maybeSingle();
+    if (priorAccountError) throw priorAccountError;
+    const email = priorAccount
+      ? baseEmail.replace("@club.local", `-${randomInt(0x1000000).toString(36).padStart(5, "0")}@club.local`)
+      : baseEmail;
     const password = generateTablePassword();
     const fullName = `${room.is_challenge ? "Giám khảo thử thách" : "Đại diện"} ${room.name} - ${table.name}`;
     const { data, error } = await admin.auth.admin.createUser({

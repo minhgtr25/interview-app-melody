@@ -3,13 +3,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { DEPARTMENTS } from "@/lib/departments";
 import { useRealtimeRows } from "@/hooks/use-realtime-rows";
+import { useInterviewDayAutoSwitch } from "@/hooks/use-interview-day-auto-switch";
 import type { DisplayCall, DisplaySettings, InterviewTable } from "@/lib/types";
 
-export function WaitingDisplay({ initialCalls, initialSettings, initialTables }: {
+export function WaitingDisplay({ initialCalls, initialSettings, initialTables, activeDay }: {
   initialCalls: DisplayCall[];
   initialSettings: DisplaySettings[];
   initialTables: InterviewTable[];
+  activeDay: string | null;
 }) {
+  useInterviewDayAutoSwitch(activeDay);
   const calls = useRealtimeRows<DisplayCall>("display_calls", initialCalls, "called_at");
   const settings = useRealtimeRows<DisplaySettings>("display_settings", initialSettings, "id");
   const tables = useRealtimeRows<InterviewTable>("tables", initialTables, "sort_order");

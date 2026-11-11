@@ -9,6 +9,7 @@ export const dynamic = "force-dynamic";
 export default async function OperationsPage() {
   const profile = await requireRole(["ADMIN", "COORDINATOR"]);
   const supabase = await createClient();
+  await supabase.rpc("ensure_interview_day");
   const [candidates, absenceHistory, evaluations, tables, rooms, criteria] = await Promise.all([
     fetchAll<Candidate>(supabase, "candidates"),
     fetchAll<CandidateDayHistory>(supabase, "candidate_day_history", "recorded_at"),

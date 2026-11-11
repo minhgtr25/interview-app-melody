@@ -404,7 +404,7 @@ export function RoomsManager({ rooms, tables, profiles, activeDay }: { rooms: Ro
         <span className="text-xs font-normal text-muted-foreground group-open:hidden">Mở cấu hình</span>
       </summary>
       <div className="space-y-4 border-t p-4">
-        <p className="text-sm text-muted-foreground">Chọn tòa, số phòng và tối đa 4 bàn. Giám khảo của bàn thường có thể dùng chung tài khoản; bàn Debate chọn tài khoản riêng đã được cấp.</p>
+        <p className="text-sm text-muted-foreground">Chọn tòa, số phòng và tối đa 4 bàn. Tài khoản giám khảo của ngày cũ đã được tháo khỏi bàn: chọn lại tài khoản có sẵn hoặc tạo tài khoản mới. Bàn Debate dùng tài khoản riêng đã được cấp.</p>
         <RoomFields form={newForm} setForm={setNewForm} judges={judges.filter((judge) => !judge.table_id && judge.is_debate_judge === newForm.isChallenge)} disabled={busy || !dayReady} prefix="new-room" />
         <Button onClick={() => void saveRoom(null, newForm)} disabled={busy || !dayReady}>
           {busy ? <Loader2 className="animate-spin" /> : <Plus />} Thêm phòng và kích hoạt

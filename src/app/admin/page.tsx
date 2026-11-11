@@ -6,6 +6,7 @@ import { Dashboard } from "./dashboard";
 
 export default async function AdminDashboardPage() {
   const supabase = await createClient();
+  await supabase.rpc("ensure_interview_day");
   const [candidates, tables, rooms] = await Promise.all([
     fetchAll<Candidate>(supabase, "candidates"),
     fetchAll<InterviewTable>(supabase, "tables", "sort_order"),

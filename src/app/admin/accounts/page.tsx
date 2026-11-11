@@ -5,6 +5,7 @@ import { AccountsManager } from "./accounts-manager";
 
 export default async function AdminAccountsPage() {
   const supabase = await createClient();
+  await supabase.rpc("ensure_interview_day");
   const [profiles, tables, rooms, session] = await Promise.all([
     fetchAll<Profile>(supabase, "profiles"),
     fetchAll<InterviewTable>(supabase, "tables", "sort_order"),

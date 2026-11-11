@@ -9,6 +9,8 @@ import { InterviewerBoard } from "./interviewer-board";
 export const dynamic = "force-dynamic";
 
 export default async function InterviewerPage() {
+  const supabase = await createClient();
+  await supabase.rpc("ensure_interview_day");
   const profile = await requireRole(["INTERVIEWER"]);
   const name = profile.full_name || profile.email;
 
@@ -26,8 +28,6 @@ export default async function InterviewerPage() {
     );
   }
 
-  const supabase = await createClient();
-  await supabase.rpc("ensure_interview_day");
   const [tables, candidates, rooms, rubric, evaluations, debateReviews, judgeCount, dayState] = await Promise.all([
     fetchAll<InterviewTable>(supabase, "tables", "sort_order"),
     fetchAll<Candidate>(supabase, "candidates"),

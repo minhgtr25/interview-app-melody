@@ -9,6 +9,7 @@ export const dynamic = "force-dynamic";
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const profile = await requireRole(["ADMIN"]);
   const supabase = await createClient();
+  await supabase.rpc("ensure_interview_day");
   const { data: dayState } = await supabase.from("interview_day_state").select("day").eq("id", "main").maybeSingle();
   return (
     <ClockProvider>
