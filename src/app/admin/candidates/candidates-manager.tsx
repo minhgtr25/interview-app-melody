@@ -55,6 +55,7 @@ export function CandidatesManager({
   const [deptF, setDeptF] = useState<DepartmentCode | "">("");
   const [exportDept, setExportDept] = useState<DepartmentCode>("CM");
   const [exportDay, setExportDay] = useState("");
+  const [exportOpen, setExportOpen] = useState(false);
   const [sourceF, setSourceF] = useState<"" | "CHECKIN">("");
   const [dayF, setDayF] = useState("");
   const [scheduleIds, setScheduleIds] = useState<string[] | null>(null);
@@ -214,39 +215,26 @@ export function CandidatesManager({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <h2 className="mr-auto text-lg font-semibold">
-          Thí sinh <span className="text-muted-foreground">({cand.rows.length})</span>
-        </h2>
-        <LiveIndicator status={cand.status} />
-        <ImportDialog onDone={() => void cand.refetch()} />
-        <Button variant="outline" onClick={() => setEditing({ id: null, data: { ...EMPTY } })}>
-          <Plus /> Thêm
-        </Button>
-        <Button variant="outline" onClick={() => void onExport()} disabled={busy}>
-          {busy ? <Loader2 className="animate-spin" /> : <Download />} Xuất toàn bộ
-        </Button>
-        <div className="flex items-center gap-1.5">
-          <select className={SELECT_CLS} value={exportDept} onChange={(event) => setExportDept(event.target.value as DepartmentCode)} aria-label="Chọn ban để xuất Excel">
-            {DEPARTMENTS.map((department) => <option key={department.code} value={department.code}>{department.code} · {department.name}</option>)}
-          </select>
-          <Button variant="outline" onClick={() => void onExport({ department: exportDept })} disabled={busy}>
-            {busy ? <Loader2 className="animate-spin" /> : <Download />} Xuất theo ban
-          </Button>
+      <div className="flex flex-wrap items-start justify-between gap-4 border-b pb-5">
+        <div className="space-y-1">
+          <h2 className="text-2xl font-semibold tracking-tight">Thí sinh</h2>
+          <p className="text-sm text-muted-foreground">{cand.rows.length} lượt phỏng vấn · Quản lý danh sách và dữ liệu Excel</p>
         </div>
-        <div className="flex items-center gap-1.5">
-          <select className={SELECT_CLS} value={exportDay} onChange={(event) => setExportDay(event.target.value)} aria-label="Chọn ngày để xuất Excel">
-            <option value="">Chọn ngày</option>
-            {days.map((day) => <option key={day} value={day}>{dayLabel(day)}</option>)}
-          </select>
-          <Button variant="outline" onClick={() => void onExport({ day: exportDay })} disabled={busy || !exportDay}>
-            <Download /> Xuất theo ngày
-          </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <LiveIndicator status={cand.status} />
+          <Button variant="outline" onClick={() => setExportOpen(true)}><Download /> Xuất Excel</Button>
+          <Button variant="outline" onClick={() => setEditing({ id: null, data: { ...EMPTY } })}><Plus /> Thêm thí sinh</Button>
+          <ImportDialog onDone={() => void cand.refetch()} />
         </div>
       </div>
 
-      <div className="flex flex-col gap-2 rounded-xl border bg-card p-3 md:flex-row md:flex-wrap">
-        <div className="relative flex-1">
+      <div className="flex flex-col gap-3 rounded-xl border bg-card p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold">Tìm và lọc</h3>
+          <p className="text-xs text-muted-foreground" aria-live="polite">Đang hiển thị {filtered.length}/{cand.rows.length} lượt phỏng vấn</p>
+        </div>
+        <div className="flex flex-col gap-2 md:flex-row md:flex-wrap">
+        <div className="relative min-w-48 flex-1">
           <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Tìm mã ứng viên, MSSV, tên, SĐT, email…" className="h-9 pl-9" />
         </div>
@@ -262,12 +250,14 @@ export function CandidatesManager({
           <option value="">Mọi ngày phỏng vấn</option>
           {days.map((day) => <option key={day} value={day}>{dayLabel(day)}</option>)}
         </select>
-        <DepartmentRadio name="candidate-filter-department" value={deptF} onChange={setDeptF} allowAll />
+        <div className="w-full border-t pt-3">
+          <DepartmentRadio name="candidate-filter-department" value={deptF} onChange={setDeptF} allowAll />
+        </div>
         {(query || statusF || sourceF || dayF || deptF) && <Button type="button" variant="ghost" size="sm" className="shrink-0"
           onClick={() => { setQuery(""); setStatusF(""); setSourceF(""); setDayF(""); setDeptF(""); }}>
           <RotateCcw /> Xóa bộ lọc
         </Button>}
-        <p className="w-full text-xs text-muted-foreground" aria-live="polite">Đang hiển thị {filtered.length}/{cand.rows.length} lượt phỏng vấn</p>
+        </div>
       </div>
 
       <div className="hidden overflow-hidden rounded-xl border bg-card lg:block">
@@ -346,6 +336,39 @@ export function CandidatesManager({
           <Trash2 /> Xoá toàn bộ thí sinh & kết quả
         </Button>
       </div>
+
+      <Dialog open={exportOpen} onOpenChange={setExportOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Xuất dữ liệu Excel</DialogTitle>
+            <DialogDescription>Chọn phạm vi dữ liệu cần tải về.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Button variant="outline" className="w-full justify-start" onClick={() => void onExport()} disabled={busy}>
+              {busy ? <Loader2 className="animate-spin" /> : <Download />} Xuất toàn bộ thí sinh
+            </Button>
+            <div className="grid gap-2">
+              <label htmlFor="export-department" className="text-sm font-medium">Theo ban</label>
+              <div className="flex gap-2">
+                <select id="export-department" className={SELECT_CLS + " min-w-0 flex-1"} value={exportDept} onChange={(event) => setExportDept(event.target.value as DepartmentCode)}>
+                  {DEPARTMENTS.map((department) => <option key={department.code} value={department.code}>{department.code} · {department.name}</option>)}
+                </select>
+                <Button variant="outline" onClick={() => void onExport({ department: exportDept })} disabled={busy}><Download /> Xuất</Button>
+              </div>
+            </div>
+            <div className="grid gap-2">
+              <label htmlFor="export-day" className="text-sm font-medium">Theo ngày phỏng vấn</label>
+              <div className="flex gap-2">
+                <select id="export-day" className={SELECT_CLS + " min-w-0 flex-1"} value={exportDay} onChange={(event) => setExportDay(event.target.value)}>
+                  <option value="">Chọn ngày</option>
+                  {days.map((day) => <option key={day} value={day}>{dayLabel(day)}</option>)}
+                </select>
+                <Button variant="outline" onClick={() => void onExport({ day: exportDay })} disabled={busy || !exportDay}><Download /> Xuất</Button>
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Thêm / sửa */}
       <Dialog open={!!scheduleIds} onOpenChange={(open) => { if (!open && !busy) setScheduleIds(null); }}>

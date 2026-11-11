@@ -103,35 +103,35 @@ export function Dashboard({
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-semibold">Tổng quan buổi phỏng vấn</h2>
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b pb-5">
+        <div className="space-y-1">
+          <h2 className="text-2xl font-semibold tracking-tight">Tổng quan phỏng vấn</h2>
           <p className="text-sm text-muted-foreground">
             <Users className="mr-1 inline size-3.5" />
-            {total} thí sinh · {tbl.rows.length} bàn · TB {formatDuration(avgDuration)} / lượt
+            {total} thí sinh · {tbl.rows.length} bàn · Trung bình {formatDuration(avgDuration)} / lượt
           </p>
         </div>
         <LiveIndicator status={status} />
       </div>
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+      <div className="grid grid-cols-2 gap-2 rounded-xl border bg-card p-2 sm:grid-cols-3 xl:grid-cols-5">
         {CARDS.map(({ key, label, icon: Icon, text }) => (
-          <div key={key} className="rounded-xl border bg-card p-4">
+          <div key={key} className="rounded-lg p-3.5 hover:bg-muted/50">
             <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">{label}</span>
+              <span className="text-xs font-medium text-muted-foreground">{label}</span>
               <Icon className={cn("size-4", text)} />
             </div>
-            <p className={cn("mt-2 text-3xl font-bold tabular-nums", text)}>{counts[key]}</p>
+            <p className="mt-2 text-3xl font-semibold tracking-tight tabular-nums">{counts[key]}</p>
             <p className="text-xs text-muted-foreground tabular-nums">
-              {total ? Math.round((counts[key] / total) * 100) : 0}%
+              {total ? Math.round((counts[key] / total) * 100) : 0}% tổng số
             </p>
           </div>
         ))}
       </div>
 
       {/* Thanh tiến độ tổng */}
-      <div className="rounded-xl border bg-card p-4">
-        <p className="mb-3 text-sm font-medium">Tiến độ tổng</p>
+      <div className="rounded-xl border bg-card p-5">
+        <p className="mb-3 text-sm font-semibold">Tiến độ tổng</p>
         <div className="flex h-4 w-full overflow-hidden rounded-full bg-muted" role="img" aria-label="Biểu đồ tiến độ theo trạng thái">
           {CARDS.map(({ key, bar }) =>
             counts[key] > 0 ? (
@@ -156,8 +156,8 @@ export function Dashboard({
 
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Theo ban */}
-        <div className="rounded-xl border bg-card p-4">
-          <p className="mb-4 text-sm font-medium">Theo ban ứng tuyển</p>
+        <div className="rounded-xl border bg-card p-5">
+          <p className="mb-4 text-sm font-semibold">Theo ban ứng tuyển</p>
           <div className="space-y-3">
             {byDept.map(([dept, row]) => (
               <div key={dept}>
@@ -181,8 +181,8 @@ export function Dashboard({
         </div>
 
         {/* Bàn đang hoạt động */}
-        <div className="rounded-xl border bg-card p-4">
-          <p className="mb-4 text-sm font-medium">
+        <div className="rounded-xl border bg-card p-5">
+          <p className="mb-4 text-sm font-semibold">
             Bàn đang hoạt động ({busyTables.length}/{tbl.rows.length})
           </p>
           <ul className="divide-y">
@@ -199,7 +199,7 @@ export function Dashboard({
                     <Timer className="size-3.5 text-muted-foreground" />
                     <Elapsed since={t.status === "INTERVIEWING" ? t.started_at : t.assigned_at} />
                   </span>
-                  {(t.status === "ASSIGNED" || t.status === "INTERVIEWING") && <Button size="xs" variant="destructive" onClick={() => { setForceTable(t); setForceNote(""); }}>
+                  {(t.status === "ASSIGNED" || t.status === "INTERVIEWING") && <Button size="xs" variant="outline" className="text-destructive" onClick={() => { setForceTable(t); setForceNote(""); }}>
                     <ShieldAlert /> Cưỡng chế kết thúc
                   </Button>}
                 </li>
@@ -209,12 +209,12 @@ export function Dashboard({
           </ul>
         </div>
       </div>
-      <section className="rounded-xl border bg-card p-4">
-        <div className="mb-3">
-          <h3 className="text-sm font-semibold">Truy cập trực tiếp bàn giám khảo</h3>
-          <p className="text-xs text-muted-foreground">Mở giao diện bất kỳ bàn nào bằng quyền Admin/Support IT, không cần đăng nhập tài khoản bàn.</p>
-        </div>
-        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+      <details className="rounded-xl border bg-card">
+        <summary className="cursor-pointer list-none p-4 marker:hidden">
+          <span className="block text-sm font-semibold">Truy cập trực tiếp bàn giám khảo</span>
+          <span className="mt-1 block text-xs text-muted-foreground">Mở giao diện từng bàn bằng quyền Admin/Support IT · {tbl.rows.length} bàn</span>
+        </summary>
+        <div className="grid gap-2 border-t p-4 sm:grid-cols-2 xl:grid-cols-3">
           {tbl.rows.map((table) => <Link key={table.id} href={`/admin-preview/${table.id}`}
             className="flex min-w-0 items-center justify-between gap-3 rounded-lg border px-3 py-2.5 text-sm hover:border-primary hover:bg-muted/40 focus-visible:outline-2 focus-visible:outline-primary">
             <span className="min-w-0">
@@ -225,7 +225,7 @@ export function Dashboard({
           </Link>)}
           {tbl.rows.length === 0 && <p className="text-sm text-muted-foreground">Chưa có bàn nào được tạo.</p>}
         </div>
-      </section>
+      </details>
       <Dialog open={!!forceTable} onOpenChange={(open) => { if (!open && !forceBusy) setForceTable(null); }}>
         <DialogContent>
           <DialogHeader>

@@ -143,20 +143,17 @@ export function AccountsManager({
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <h2 className="mr-auto text-lg font-semibold">
-          Tài khoản nhân sự <span className="text-muted-foreground">({profiles.length})</span>
-        </h2>
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-start justify-between gap-4 border-b pb-5">
+        <div className="space-y-1">
+          <h2 className="text-2xl font-semibold tracking-tight">Tài khoản nhân sự</h2>
+          <p className="text-sm text-muted-foreground">{profiles.length} tài khoản · Phân quyền và gán giám khảo vào bàn</p>
+        </div>
         <Button
           disabled={!serviceKeyConfigured}
           onClick={() => setForm({ id: null, email: "", password: genPassword(8), fullName: "", role: "INTERVIEWER", tableId: "", isDebateJudge: false })}
         >
           <Plus /> Cấp tài khoản
-        </Button>
-        <Button variant="destructive" disabled={!serviceKeyConfigured || !profiles.some((profile) => profile.role === "INTERVIEWER")}
-          onClick={() => setDeleteAllOpen(true)}>
-          <Trash2 /> Xóa toàn bộ Giám khảo ({profiles.filter((profile) => profile.role === "INTERVIEWER").length})
         </Button>
       </div>
 
@@ -173,20 +170,25 @@ export function AccountsManager({
         </p>
       )}
 
-      <div className="flex flex-col gap-2 rounded-xl border bg-card p-3 sm:flex-row">
-        <div className="relative min-w-0 flex-1">
-          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input type="search" value={query} onChange={(event) => setQuery(event.target.value)}
-            placeholder="Tìm tên, email, vai trò hoặc phòng/bàn" className="pl-9 pr-9" aria-label="Tìm tài khoản" />
-          {query && <Button type="button" variant="ghost" size="icon-xs" className="absolute right-2 top-1/2 -translate-y-1/2"
-            aria-label="Xóa nội dung tìm kiếm" onClick={() => setQuery("")}><X /></Button>}
+      <div className="flex flex-col gap-3 rounded-xl border bg-card p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold">Tìm tài khoản</h3>
+          <p className="text-xs text-muted-foreground" aria-live="polite">Hiển thị {sorted.length}/{profiles.length} tài khoản</p>
         </div>
-        <select className={SELECT_CLS + " sm:w-52"} value={roleFilter} onChange={(event) => setRoleFilter(event.target.value as UserRole | "")} aria-label="Lọc theo vai trò">
-          <option value="">Tất cả vai trò</option>
-          {ROLES.map((role) => <option key={role} value={role}>{ROLE_LABEL[role]}</option>)}
-        </select>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <div className="relative min-w-0 flex-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input type="search" value={query} onChange={(event) => setQuery(event.target.value)}
+              placeholder="Tìm tên, email, vai trò hoặc phòng/bàn" className="pl-9 pr-9" aria-label="Tìm tài khoản" />
+            {query && <Button type="button" variant="ghost" size="icon-xs" className="absolute right-2 top-1/2 -translate-y-1/2"
+              aria-label="Xóa nội dung tìm kiếm" onClick={() => setQuery("")}><X /></Button>}
+          </div>
+          <select className={SELECT_CLS + " sm:w-52"} value={roleFilter} onChange={(event) => setRoleFilter(event.target.value as UserRole | "")} aria-label="Lọc theo vai trò">
+            <option value="">Tất cả vai trò</option>
+            {ROLES.map((role) => <option key={role} value={role}>{ROLE_LABEL[role]}</option>)}
+          </select>
+        </div>
       </div>
-      <p className="text-xs text-muted-foreground" aria-live="polite">Hiển thị {sorted.length}/{profiles.length} tài khoản</p>
 
       <div className="overflow-x-auto rounded-xl border bg-card">
         <Table>
@@ -240,6 +242,13 @@ export function AccountsManager({
             </TableCell></TableRow>}
           </TableBody>
         </Table>
+      </div>
+
+      <div className="flex justify-end border-t pt-4">
+        <Button variant="ghost" className="text-destructive" disabled={!serviceKeyConfigured || !profiles.some((profile) => profile.role === "INTERVIEWER")}
+          onClick={() => setDeleteAllOpen(true)}>
+          <Trash2 /> Xóa toàn bộ Giám khảo ({profiles.filter((profile) => profile.role === "INTERVIEWER").length})
+        </Button>
       </div>
 
       {/* Tạo / sửa */}

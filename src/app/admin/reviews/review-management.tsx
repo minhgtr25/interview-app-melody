@@ -110,11 +110,11 @@ export function ReviewManagement({ portals, candidates, evaluations, decisions, 
 
   return <div className="space-y-6">
     <div className="flex flex-wrap items-start justify-between gap-3 border-b pb-5">
-      <div><h2 className="text-xl font-semibold">Cổng chấm kết quả theo Ban</h2>
+      <div><h2 className="text-2xl font-semibold tracking-tight">Chốt kết quả</h2>
         <p className="mt-1 max-w-2xl text-sm text-muted-foreground">Mở Ban để tạo link và mã 4 ký tự. Mã chỉ hiển thị một lần; tạo mã mới sẽ thu hồi quyền truy cập cũ.</p></div>
       <Button variant="outline" onClick={() => void downloadResults()}><Download /> Xuất kết quả đã chốt</Button>
     </div>
-    <div className="max-w-xl space-y-1.5">
+    <div className="max-w-xl space-y-1.5 rounded-xl border bg-card p-4">
       <label htmlFor="review-base" className="block text-sm font-medium">Địa chỉ web để chia sẻ</label>
       <Input id="review-base" type="url" value={portalBase} onChange={(event) => {
         const value = event.target.value;

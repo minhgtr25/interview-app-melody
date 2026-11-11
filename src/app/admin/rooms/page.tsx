@@ -19,6 +19,10 @@ export default async function AdminRoomsPage() {
   ]);
   const scheduleDays = [...new Set([...interviewDays(candidates), ...(eventDayResult.data ?? []).map((row) => row.day)])];
   return <div className="space-y-6">
+    <div className="border-b pb-5">
+      <h1 className="text-2xl font-semibold tracking-tight">Phòng & bàn</h1>
+      <p className="mt-1 text-sm text-muted-foreground">Lên bố trí theo ngày, cấu hình phòng và theo dõi số bàn của từng ban.</p>
+    </div>
     <DayRoomPlanner rooms={rooms} tables={tables} activeDay={stateResult.data?.day ?? todayInVietnam()}
       plans={(planResult.data ?? []) as InterviewDayPlan[]} scheduleDays={scheduleDays} />
     <RoomsManager rooms={rooms} tables={tables} profiles={profiles} activeDay={stateResult.data?.day ?? todayInVietnam()} />

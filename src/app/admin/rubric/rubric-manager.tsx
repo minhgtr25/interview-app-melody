@@ -79,11 +79,11 @@ export function RubricManager({ criteria, evaluationCount }: { criteria: RubricC
   }
 
   return (
-    <div className="max-w-4xl space-y-4">
-      <div className="flex flex-wrap items-center gap-2">
+    <div className="max-w-4xl space-y-5">
+      <div className="flex flex-wrap items-start gap-3 border-b pb-5">
         <div className="mr-auto">
-          <h2 className="text-lg font-semibold">Tiêu chí chấm (Rubric)</h2>
-          <p className="text-sm text-muted-foreground">
+          <h2 className="text-2xl font-semibold tracking-tight">Tiêu chí chấm</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
             Điểm TB = trung bình có trọng số, quy về thang 10. Tiêu chí ≤10 điểm hiển thị dạng nút bấm, lớn hơn dùng nút +/-.
           </p>
         </div>

@@ -394,25 +394,31 @@ export function RoomsManager({ rooms, tables, profiles, activeDay }: { rooms: Ro
 
   return <div className="space-y-6">
     <div>
-      <h2 className="text-lg font-semibold">Cấu hình Phòng & Bàn đang hoạt động · {dayLabel(activeDay)}</h2>
-      <p className="text-sm text-muted-foreground">Chọn Tòa, Số phòng, từ 1 đến 4 bàn, rồi chọn Ban và ngạch riêng cho từng bàn trước khi kích hoạt. Nhiều giám khảo có thể dùng chung máy của bàn; không cần cấp tài khoản riêng cho từng người.</p>
+      <h2 className="text-lg font-semibold">Cấu hình đang hoạt động</h2>
+      <p className="mt-1 text-sm text-muted-foreground">Ngày {dayLabel(activeDay)} · Chọn ban và ngạch cho từng bàn trước khi kích hoạt.</p>
     </div>
 
-    <section className="space-y-4 rounded-xl border bg-card p-4">
-      <h3 className="font-semibold">Thêm phòng mới</h3>
-      <RoomFields form={newForm} setForm={setNewForm} judges={judges.filter((judge) => !judge.table_id && judge.is_debate_judge === newForm.isChallenge)} disabled={busy || !dayReady} prefix="new-room" />
-      <Button onClick={() => void saveRoom(null, newForm)} disabled={busy || !dayReady}>
-        {busy ? <Loader2 className="animate-spin" /> : <Plus />} Thêm phòng và kích hoạt
-      </Button>
-    </section>
+    <details className="group rounded-xl border bg-card" open={rooms.length === 0}>
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 p-4 font-semibold marker:hidden">
+        <span className="inline-flex items-center gap-2"><Plus className="size-4" /> Thêm phòng mới</span>
+        <span className="text-xs font-normal text-muted-foreground group-open:hidden">Mở cấu hình</span>
+      </summary>
+      <div className="space-y-4 border-t p-4">
+        <p className="text-sm text-muted-foreground">Chọn tòa, số phòng và tối đa 4 bàn. Giám khảo của bàn thường có thể dùng chung tài khoản; bàn Debate chọn tài khoản riêng đã được cấp.</p>
+        <RoomFields form={newForm} setForm={setNewForm} judges={judges.filter((judge) => !judge.table_id && judge.is_debate_judge === newForm.isChallenge)} disabled={busy || !dayReady} prefix="new-room" />
+        <Button onClick={() => void saveRoom(null, newForm)} disabled={busy || !dayReady}>
+          {busy ? <Loader2 className="animate-spin" /> : <Plus />} Thêm phòng và kích hoạt
+        </Button>
+      </div>
+    </details>
 
     <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
       {DEPARTMENTS.map((department) => {
         const matching = tables.filter((table) => table.department === department.code);
         const roomCount = new Set(matching.map((table) => table.room_id)).size;
         return <div key={department.code} className="rounded-lg border bg-card p-3 text-sm">
-          <p className="font-semibold">{department.name} ({department.code})</p>
-          <p className="text-muted-foreground">{roomCount} phòng · {matching.length} bàn</p>
+          <p className="text-xs font-medium text-muted-foreground">{department.name} ({department.code})</p>
+          <p className="mt-1 font-semibold tabular-nums">{roomCount} phòng <span className="font-normal text-muted-foreground">· {matching.length} bàn</span></p>
         </div>;
       })}
     </section>
